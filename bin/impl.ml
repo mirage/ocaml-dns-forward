@@ -15,5 +15,33 @@
  *
  *)
 
-let serve _port =
-  `Ok ()
+open Lwt.Infix
+
+let read_lines filename =
+  Lwt.catch
+    (fun () ->
+      Lwt_io.open_file filename ~mode:Lwt_io.input
+      >>= fun ic ->
+      Lwt.finalize
+        (fun () ->
+          let s = Lwt_io.read_lines ic in
+          Lwt_stream.to_list s
+        ) (fun () ->
+          Lwt_io.close ic
+        )
+    ) (function
+      | Unix.Unix_error(Unix.ENOENT, _, _) as e ->
+        Logs.err (fun f -> f "failed to find file %s" filename);
+        Lwt.fail e
+      )
+
+let serve _port filename =
+  if filename = "" then begin
+    `Error (true, "please supply the name of a config file")
+  end else Lwt_main.run begin
+    read_lines filename
+    >>= fun lines ->
+    let all = String.concat "" lines in
+    let _config = Dns_forward_config.t_of_sexp @@ Sexplib.Sexp.of_string all in
+    Lwt.return (`Ok ())
+  end
