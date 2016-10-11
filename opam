@@ -19,6 +19,7 @@ depends: [
   "topkg"      {build}
   "ppx_tools"  {build}
   "cmdliner"
+  "mirage-flow"
   "rresult" "astring" "fmt"
   "cstruct"     {>= "2.2"}
   "result" "lwt"
