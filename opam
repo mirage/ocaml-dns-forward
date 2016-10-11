@@ -17,12 +17,14 @@ depends: [
   "ocamlfind"  {build}
   "ocamlbuild" {build}
   "topkg"      {build}
+  "ppx_tools"  {build}
   "cmdliner"
   "rresult" "astring" "fmt"
   "cstruct"     {>= "2.2"}
   "result" "lwt"
   "logs"        {>= "0.5.0"}
   "mtime"
+  "sexplib"
   "alcotest"   {test}
 ]
 available: [ocaml-version >= "4.02.0"]

@@ -14,17 +14,18 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
+open Sexplib.Std
 
 type address = {
   ip: Ipaddr.t;
   port: int;
-}
+} [@@deriving sexp]
 
-type domain = string
+type domain = string [@@deriving sexp]
 
 type server = {
   zones: domain list;
   address: address;
-}
+} [@@deriving sexp]
 
-type t = server list
+type t = server list [@@deriving sexp]

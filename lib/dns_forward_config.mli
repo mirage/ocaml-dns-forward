@@ -28,5 +28,5 @@ type server = {
 }
 (** A single upstream DNS server *)
 
-type t = server list
+type t = server list [@@deriving sexp]
 (** Upstream DNS servers *)
