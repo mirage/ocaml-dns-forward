@@ -40,7 +40,7 @@ let common_options_t =
 
 let port =
   let doc = "Local port to serve DNS queries on" in
-  Arg.(value & opt int 5353 & info [ "port" ] ~doc)
+  Arg.(value & opt int 5555 & info [ "port" ] ~doc)
 
 let config =
   let doc = "Path of configuration file" in
