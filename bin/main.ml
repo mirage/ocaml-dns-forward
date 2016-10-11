@@ -42,6 +42,10 @@ let port =
   let doc = "Local port to serve DNS queries on" in
   Arg.(value & opt int 5353 & info [ "port" ] ~doc)
 
+let config =
+  let doc = "Path of configuration file" in
+  Arg.(value & pos 0 file "" & info [] ~doc)
+
 let serve_cmd =
   let doc = "Listen for DNS requests and forward them" in
   let man = [
@@ -49,7 +53,7 @@ let serve_cmd =
     `P "Listen for DNS requests on a local port and forward them to an upstream\
         server."
   ] @ help in
-  Term.(ret(pure Impl.serve $ port)),
+  Term.(ret(pure Impl.serve $ port $ config)),
   Term.info "serve" ~sdocs:_common_options ~doc ~man
 
 let _ =
