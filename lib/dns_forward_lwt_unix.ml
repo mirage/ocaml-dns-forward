@@ -24,15 +24,10 @@ let src =
 module Log = (val Logs.src_log src : Logs.LOG)
 
 let default_read_buffer_size = 65536
+let max_udp_length = 65507 (* IP datagram (65535) - IP header(20) - UDP header(8) *)
 
-module Tcp = struct
-  type 'a io = 'a Lwt.t
-
-  type flow = {
-    mutable fd: Lwt_unix.file_descr option;
-    read_buffer_size: int;
-    mutable read_buffer: Cstruct.t;
-  }
+module Common = struct
+  (** Both UDP and TCP *)
 
   type error = [
    | `Msg of string
@@ -45,12 +40,29 @@ module Tcp = struct
 
   type address = Ipaddr.t * int
 
+  type buffer = Cstruct.t
+
+  let sockaddr_of_address (dst, dst_port) =
+    Unix.ADDR_INET(Unix.inet_addr_of_string @@ Ipaddr.to_string dst, dst_port)
+
+  type 'a io = 'a Lwt.t
+end
+
+module Tcp = struct
+  include Common
+
+  type flow = {
+    mutable fd: Lwt_unix.file_descr option;
+    read_buffer_size: int;
+    mutable read_buffer: Cstruct.t;
+  }
+
   let of_fd ~read_buffer_size fd =
     let read_buffer = Cstruct.create read_buffer_size in
     { fd = Some fd; read_buffer_size; read_buffer }
 
-  let connect ?(read_buffer_size=default_read_buffer_size) (dst, dst_port) =
-    let sockaddr = Unix.ADDR_INET(Unix.inet_addr_of_string @@ Ipaddr.to_string dst, dst_port) in
+  let connect ?(read_buffer_size=default_read_buffer_size) address =
+    let sockaddr = sockaddr_of_address address in
     let fd = Lwt_unix.socket Lwt_unix.PF_INET Lwt_unix.SOCK_STREAM 0 in
     Lwt.catch
       (fun () ->
@@ -63,8 +75,6 @@ module Tcp = struct
          >>= fun () ->
          errorf "Lwt_unix.connect: caught %s" (Printexc.to_string e)
       )
-
-  type buffer = Cstruct.t
 
   let read t = match t.fd with
     | None -> Lwt.return `Eof
@@ -228,4 +238,67 @@ module Tcp = struct
                 Lwt.return_unit
               )
           )
+end
+
+module Udp = struct
+  include Common
+
+  type flow = {
+    mutable fd: Lwt_unix.file_descr option;
+    read_buffer_size: int;
+    address: address;
+  }
+
+  let connect ?(read_buffer_size = max_udp_length) address =
+    let fd = Lwt_unix.socket Lwt_unix.PF_INET Lwt_unix.SOCK_DGRAM 0 in
+    (* Win32 requires all sockets to be bound however macOS and Linux don't *)
+    (try Lwt_unix.bind fd (Lwt_unix.ADDR_INET(Unix.inet_addr_any, 0)) with _ -> ());
+    Lwt.return (`Ok { fd = Some fd; read_buffer_size; address })
+
+  let read t = match t.fd with
+    | None -> Lwt.return `Eof
+    | Some fd ->
+      let buffer = Cstruct.create t.read_buffer_size in
+      let bytes = Bytes.make t.read_buffer_size '\000' in
+      Lwt.catch
+        (fun () ->
+          (* Lwt on Win32 doesn't support Lwt_bytes.recvfrom *)
+          Lwt_unix.recvfrom fd bytes 0 (Bytes.length bytes) []
+          >>= fun (n, _) ->
+          Cstruct.blit_from_bytes bytes 0 buffer 0 n;
+          let response = Cstruct.sub buffer 0 n in
+          Lwt.return (`Ok response)
+        ) (fun e ->
+          Log.err (fun f -> f "Udp.read: caught %s returning Eof" (Printexc.to_string e));
+          Lwt.return `Eof
+        )
+
+  let write t buf = match t.fd with
+    | None -> Lwt.return `Eof
+    | Some fd ->
+      Lwt.catch
+        (fun () ->
+          (* Lwt on Win32 doesn't support Lwt_bytes.sendto *)
+          let bytes = Bytes.make (Cstruct.len buf) '\000' in
+          Cstruct.blit_to_bytes buf 0 bytes 0 (Cstruct.len buf);
+          let remote_sockaddr = sockaddr_of_address t.address in
+          Lwt_unix.sendto fd bytes 0 (Bytes.length bytes) [] remote_sockaddr
+          >>= fun _n ->
+          Lwt.return (`Ok ())
+        ) (fun e ->
+          Log.err (fun f -> f "Udp.write: caught %s returning Eof" (Printexc.to_string e));
+          Lwt.return `Eof
+        )
+
+  let writev t bufs = write t (Cstruct.concat bufs)
+
+  let close t = match t.fd with
+    | None -> Lwt.return_unit
+    | Some fd ->
+      t.fd <- None;
+      Lwt_unix.close fd
+
+  let shutdown_read _t = Lwt.return_unit
+  let shutdown_write _t = Lwt.return_unit
+
 end

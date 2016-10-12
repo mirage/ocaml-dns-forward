@@ -27,3 +27,13 @@ module Tcp: sig
     with type address := address
      and type flow := flow
 end
+
+module Udp: sig
+  type address = Ipaddr.t * int
+
+  type flow
+
+  include Dns_forward_s.CLIENT
+    with type address := address
+     and type flow := flow
+end
