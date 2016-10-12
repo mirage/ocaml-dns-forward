@@ -36,4 +36,7 @@ module Udp: sig
   include Dns_forward_s.CLIENT
     with type address := address
      and type flow := flow
+  include Dns_forward_s.SERVER
+    with type address := address
+    and type flow := flow
 end

@@ -32,7 +32,7 @@ module type SERVER = sig
 
   type address
 
-  val bind: address -> server Lwt.t
+  val bind: address -> [ `Ok of server | `Error of [ `Msg of string ]] Lwt.t
   (** Bind a server to an address *)
 
   val getsockname: server -> address

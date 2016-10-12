@@ -45,7 +45,19 @@ module Common = struct
   let sockaddr_of_address (dst, dst_port) =
     Unix.ADDR_INET(Unix.inet_addr_of_string @@ Ipaddr.to_string dst, dst_port)
 
+  let string_of_address (dst, dst_port) =
+    Ipaddr.to_string dst ^ ":" ^ (string_of_int dst_port)
+
   type 'a io = 'a Lwt.t
+
+  let getsockname fn_name fd_opt = match fd_opt with
+    | None -> failwith (fn_name ^ ": socket is closed")
+    | Some fd ->
+      begin match Lwt_unix.getsockname fd with
+      | Lwt_unix.ADDR_INET(iaddr, port) ->
+        Ipaddr.V4 (Ipaddr.V4.of_string_exn (Unix.string_of_inet_addr iaddr)), port
+      | _ -> invalid_arg (fn_name ^ ": passed a non-TCP socket")
+      end
 end
 
 module Tcp = struct
@@ -159,30 +171,20 @@ module Tcp = struct
     read_buffer_size: int;
   }
 
-  let bind (ip, port) =
-    let addr = Lwt_unix.ADDR_INET(Unix.inet_addr_of_string @@ Ipaddr.to_string ip, port) in
+  let bind address =
     let fd = Lwt_unix.socket Lwt_unix.PF_INET Lwt_unix.SOCK_STREAM 0 in
     Lwt.catch
       (fun () ->
         Lwt_unix.setsockopt fd Lwt_unix.SO_REUSEADDR true;
-        Lwt_unix.bind fd addr;
-        Lwt.return fd
+        Lwt_unix.bind fd (sockaddr_of_address address);
+        Lwt.return (`Ok { server_fd = Some fd; read_buffer_size = default_read_buffer_size })
       ) (fun e ->
         Lwt_unix.close fd
         >>= fun () ->
-        Lwt.fail e
+        errorf "Tcp.bind failed to bind to %s: %s" (string_of_address address) (Printexc.to_string e)
       )
-    >>= fun fd ->
-    Lwt.return { server_fd = Some fd; read_buffer_size = default_read_buffer_size }
 
-  let getsockname server = match server.server_fd with
-    | None -> failwith "Tcp_server.getsockname: socket is closed"
-    | Some fd ->
-      begin match Lwt_unix.getsockname fd with
-      | Lwt_unix.ADDR_INET(iaddr, port) ->
-        Ipaddr.V4 (Ipaddr.V4.of_string_exn (Unix.string_of_inet_addr iaddr)), port
-      | _ -> invalid_arg "Tcp_server.getsockname passed a non-TCP socket"
-      end
+  let getsockname server = getsockname "Tcp.getsockname" server.server_fd
 
   let shutdown server = match server.server_fd with
     | None -> Lwt.return_unit
@@ -246,18 +248,26 @@ module Udp = struct
   type flow = {
     mutable fd: Lwt_unix.file_descr option;
     read_buffer_size: int;
-    address: address;
+    mutable already_read: Cstruct.t option;
+    sockaddr: Unix.sockaddr;
   }
 
   let connect ?(read_buffer_size = max_udp_length) address =
     let fd = Lwt_unix.socket Lwt_unix.PF_INET Lwt_unix.SOCK_DGRAM 0 in
     (* Win32 requires all sockets to be bound however macOS and Linux don't *)
     (try Lwt_unix.bind fd (Lwt_unix.ADDR_INET(Unix.inet_addr_any, 0)) with _ -> ());
-    Lwt.return (`Ok { fd = Some fd; read_buffer_size; address })
+    let already_read = None in
+    let sockaddr = sockaddr_of_address address in
+    Lwt.return (`Ok { fd = Some fd; read_buffer_size; already_read; sockaddr })
 
-  let read t = match t.fd with
-    | None -> Lwt.return `Eof
-    | Some fd ->
+  let read t = match t.fd, t.already_read with
+    | None, _ -> Lwt.return `Eof
+    | Some _, Some data when Cstruct.len data > 0 ->
+      t.already_read <- Some (Cstruct.sub data 0 0); (* next read is `Eof *)
+      Lwt.return (`Ok data)
+    | Some _, Some _ ->
+      Lwt.return `Eof
+    | Some fd, None ->
       let buffer = Cstruct.create t.read_buffer_size in
       let bytes = Bytes.make t.read_buffer_size '\000' in
       Lwt.catch
@@ -281,8 +291,7 @@ module Udp = struct
           (* Lwt on Win32 doesn't support Lwt_bytes.sendto *)
           let bytes = Bytes.make (Cstruct.len buf) '\000' in
           Cstruct.blit_to_bytes buf 0 bytes 0 (Cstruct.len buf);
-          let remote_sockaddr = sockaddr_of_address t.address in
-          Lwt_unix.sendto fd bytes 0 (Bytes.length bytes) [] remote_sockaddr
+          Lwt_unix.sendto fd bytes 0 (Bytes.length bytes) [] t.sockaddr
           >>= fun _n ->
           Lwt.return (`Ok ())
         ) (fun e ->
@@ -300,5 +309,62 @@ module Udp = struct
 
   let shutdown_read _t = Lwt.return_unit
   let shutdown_write _t = Lwt.return_unit
+
+  type server = {
+    mutable server_fd: Lwt_unix.file_descr option;
+  }
+
+  let getsockname server = getsockname "Udp.getsockname" server.server_fd
+
+  let bind address =
+    let fd = Lwt_unix.socket Lwt_unix.PF_INET Lwt_unix.SOCK_DGRAM 0 in
+    try
+      let sockaddr = sockaddr_of_address address in
+      Lwt_unix.bind fd sockaddr;
+      Lwt.return (`Ok { server_fd = Some fd })
+    with
+    | e -> errorf "Udp.bind failed to bind address %s: %s"
+      (string_of_address address) (Printexc.to_string e)
+
+  let shutdown t = match t.server_fd with
+    | None -> Lwt.return_unit
+    | Some fd ->
+      t.server_fd <- None;
+      Lwt_unix.close fd
+
+  let listen t flow_cb =
+    let buffer = Cstruct.create max_udp_length in
+    let bytes = Bytes.make max_udp_length '\000' in
+    match t.server_fd with
+    | None -> ()
+    | Some fd ->
+      let rec loop () =
+        Lwt.catch
+          (fun () ->
+            (* Lwt on Win32 doesn't support Lwt_bytes.recvfrom *)
+            Lwt_unix.recvfrom fd bytes 0 (Bytes.length bytes) []
+            >>= fun (n, sockaddr) ->
+            Cstruct.blit_from_bytes bytes 0 buffer 0 n;
+            let data = Cstruct.sub buffer 0 n in
+            (* construct a flow with this buffer available for reading *)
+            let flow = { fd = Some fd; read_buffer_size = 0; already_read = Some data; sockaddr } in
+            Lwt.async
+              (fun () ->
+                Lwt.catch
+                  (fun () -> flow_cb flow)
+                  (fun e ->
+                    Log.info (fun f -> f "Udp.listen callback caught: %s" (Printexc.to_string e));
+                    Lwt.return_unit
+                  )
+              );
+            Lwt.return true
+          ) (fun e ->
+            Log.err (fun f -> f "Udp.listen: caught %s shutting down server" (Printexc.to_string e));
+            Lwt.return false
+          )
+        >>= function
+        | false -> Lwt.return_unit
+        | true -> loop () in
+      Lwt.async loop
 
 end
