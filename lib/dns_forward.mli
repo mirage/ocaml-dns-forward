@@ -23,4 +23,7 @@
   val make: Dns_forward_config.t -> t
   (** Construct a forwarding DNS proxy given some configuration *)
 
+  val answer: t -> Cstruct.t -> unit Lwt.t
+  (** Given a DNS request, construct an response *)
+
  end
