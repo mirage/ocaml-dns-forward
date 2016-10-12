@@ -15,5 +15,15 @@
  *
  *)
 
- module Tcp_client: Dns_forward_s.CLIENT
- (* module Tcp_server: Dns_forward_s.SERVER*)
+module Tcp: sig
+  type address = Ipaddr.t * int
+
+  type flow
+
+  include Dns_forward_s.CLIENT
+    with type address := address
+     and type flow := flow
+  include Dns_forward_s.SERVER
+    with type address := address
+     and type flow := flow
+end

@@ -23,7 +23,9 @@ let src =
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
-module Tcp_client = struct
+let default_read_buffer_size = 65536
+
+module Tcp = struct
   type 'a io = 'a Lwt.t
 
   type flow = {
@@ -43,15 +45,18 @@ module Tcp_client = struct
 
   type address = Ipaddr.t * int
 
-  let connect ?(read_buffer_size=65536) (dst, dst_port) =
+  let of_fd ~read_buffer_size fd =
+    let read_buffer = Cstruct.create read_buffer_size in
+    { fd = Some fd; read_buffer_size; read_buffer }
+
+  let connect ?(read_buffer_size=default_read_buffer_size) (dst, dst_port) =
     let sockaddr = Unix.ADDR_INET(Unix.inet_addr_of_string @@ Ipaddr.to_string dst, dst_port) in
     let fd = Lwt_unix.socket Lwt_unix.PF_INET Lwt_unix.SOCK_STREAM 0 in
     Lwt.catch
       (fun () ->
          Lwt_unix.connect fd sockaddr
          >>= fun () ->
-         let read_buffer = Cstruct.create read_buffer_size in
-         Lwt.return (`Ok { fd = Some fd; read_buffer_size; read_buffer })
+         Lwt.return (`Ok (of_fd ~read_buffer_size fd))
       )
       (fun e ->
          Lwt_unix.close fd
@@ -138,7 +143,89 @@ module Tcp_client = struct
           | _e ->
             Lwt.return_unit
           )
- end
 
- module Tcp_server = struct
- end
+  type server = {
+    mutable server_fd: Lwt_unix.file_descr option;
+    read_buffer_size: int;
+  }
+
+  let bind (ip, port) =
+    let addr = Lwt_unix.ADDR_INET(Unix.inet_addr_of_string @@ Ipaddr.to_string ip, port) in
+    let fd = Lwt_unix.socket Lwt_unix.PF_INET Lwt_unix.SOCK_STREAM 0 in
+    Lwt.catch
+      (fun () ->
+        Lwt_unix.setsockopt fd Lwt_unix.SO_REUSEADDR true;
+        Lwt_unix.bind fd addr;
+        Lwt.return fd
+      ) (fun e ->
+        Lwt_unix.close fd
+        >>= fun () ->
+        Lwt.fail e
+      )
+    >>= fun fd ->
+    Lwt.return { server_fd = Some fd; read_buffer_size = default_read_buffer_size }
+
+  let getsockname server = match server.server_fd with
+    | None -> failwith "Tcp_server.getsockname: socket is closed"
+    | Some fd ->
+      begin match Lwt_unix.getsockname fd with
+      | Lwt_unix.ADDR_INET(iaddr, port) ->
+        Ipaddr.V4 (Ipaddr.V4.of_string_exn (Unix.string_of_inet_addr iaddr)), port
+      | _ -> invalid_arg "Tcp_server.getsockname passed a non-TCP socket"
+      end
+
+  let shutdown server = match server.server_fd with
+    | None -> Lwt.return_unit
+    | Some fd ->
+      server.server_fd <- None;
+      Lwt_unix.close fd
+
+  let listen (server: server) cb =
+    let rec loop fd =
+      Lwt_unix.accept fd
+      >>= fun (client, _sockaddr) ->
+      let read_buffer_size = server.read_buffer_size in
+
+      Lwt.async
+       (fun () ->
+         Lwt.catch
+           (fun () ->
+             Lwt.return (Some (of_fd ~read_buffer_size client))
+           ) (fun _e ->
+             Lwt_unix.close client
+             >>= fun () ->
+             Lwt.return_none
+           )
+         >>= function
+         | None -> Lwt.return_unit
+         | Some flow ->
+          Lwt.finalize
+            (fun () ->
+              Lwt.catch
+                (fun () -> cb flow)
+                (fun e ->
+                  Log.info (fun f -> f "caught %s so closing flow" (Printexc.to_string e));
+                  Lwt.return_unit)
+            ) (fun () -> close flow)
+      );
+      loop fd in
+    match server.server_fd with
+    | None -> ()
+    | Some fd ->
+        Lwt.async
+          (fun () ->
+            Lwt.catch
+              (fun () ->
+                Lwt.finalize
+                  (fun () ->
+                    Lwt_unix.listen fd 32;
+                    loop fd
+                  ) (fun () ->
+                    shutdown server
+                  )
+              ) (fun e ->
+                Log.info (fun f -> f "caught %s so shutting down server" (Printexc.to_string e));
+                Lwt.return_unit
+              )
+          )
+end
