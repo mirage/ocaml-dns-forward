@@ -22,6 +22,7 @@ let src =
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
+open Lwt.Infix
 
 let is_in_domain name domain =
   let name' = List.length name and domain' = List.length domain in
@@ -56,11 +57,21 @@ let choose_servers config request =
   | _ -> []
   end
 
-module Make(Tcpip: Dns_forward_s.TCPIP) = struct
+let or_fail_msg m = m >>= function
+  | `Error `Eof -> Lwt.fail End_of_file
+  | `Error (`Msg m) -> Lwt.fail (Failure m)
+  | `Ok x -> Lwt.return x
+
+module Make(Tcpip: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME) = struct
 
   type t = {
     config: Dns_forward_config.t;
   }
+
+  let or_fail_flow m = m >>= function
+    | `Eof -> Lwt.fail End_of_file
+    | `Error e -> Lwt.fail (Failure (Tcpip.error_message e))
+    | `Ok x -> Lwt.return x
 
   let make config =
     { config }
@@ -72,13 +83,22 @@ module Make(Tcpip: Dns_forward_s.TCPIP) = struct
     | Some request ->
       let servers = choose_servers t.config request in
       (* send the request to all upstream servers *)
-      let ts = List.map (fun server ->
+      let rpc server =
         let open Dns_forward_config in
         Log.debug (fun f -> f "forwarding to server %s:%d" (Ipaddr.to_string server.address.ip) server.address.port);
-        Lwt.return_unit
-      ) servers in
-      Lwt.join ts
+        or_fail_msg @@ Tcpip.connect (server.address.ip, server.address.port)
+        >>= fun flow ->
+        or_fail_flow @@ Tcpip.write flow buffer
+        >>= fun () ->
+        or_fail_flow @@ Tcpip.read flow
+        >>= fun reply ->
+        Tcpip.close flow
+        >>= fun () ->
+        Lwt.return (Some reply) in
+
+      (* Pick the first reply to come back, or timeout *)
+      Lwt.pick @@ (Time.sleep 2. >>= fun () -> Lwt.return None) :: (List.map rpc servers)
     | None ->
       Log.debug (fun f -> f "failed to parse request");
-      Lwt.return_unit
+      Lwt.return_none
 end

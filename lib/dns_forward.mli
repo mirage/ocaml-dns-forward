@@ -15,7 +15,7 @@
  *
  *)
 
- module Make(Tcpip: Dns_forward_s.TCPIP): sig
+ module Make(Tcpip: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME): sig
 
   type t
   (** A forwarding DNS proxy *)
@@ -23,7 +23,7 @@
   val make: Dns_forward_config.t -> t
   (** Construct a forwarding DNS proxy given some configuration *)
 
-  val answer: t -> Cstruct.t -> unit Lwt.t
+  val answer: t -> Cstruct.t -> Cstruct.t option Lwt.t
   (** Given a DNS request, construct an response *)
 
  end
