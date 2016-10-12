@@ -35,7 +35,9 @@ let read_lines filename =
         Lwt.fail e
       )
 
-let serve _port filename =
+let max_udp_length = 65507
+
+let serve port filename =
   if filename = "" then begin
     `Error (true, "please supply the name of a config file")
   end else Lwt_main.run begin
@@ -43,5 +45,18 @@ let serve _port filename =
     >>= fun lines ->
     let all = String.concat "" lines in
     let _config = Dns_forward_config.t_of_sexp @@ Sexplib.Sexp.of_string all in
+    let udp = Lwt_unix.socket Lwt_unix.PF_INET Lwt_unix.SOCK_DGRAM 0 in
+    Lwt_unix.bind udp (Lwt_unix.ADDR_INET(Unix.inet_addr_of_string "127.0.0.1", port));
+    let buf = Cstruct.create max_udp_length in
+    let bytes = Bytes.make max_udp_length '\000' in
+    let rec loop () =
+      Lwt_unix.recvfrom udp bytes 0 (Bytes.length bytes) []
+      >>= fun (n, _) ->
+      Cstruct.blit_from_bytes bytes 0 buf 0 n;
+      let request = Cstruct.sub buf 0 n in
+      Cstruct.hexdump request;
+      loop () in
+    loop ()
+    >>= fun () ->
     Lwt.return (`Ok ())
   end
