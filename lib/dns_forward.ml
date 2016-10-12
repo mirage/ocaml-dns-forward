@@ -14,3 +14,12 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
+
+module Make(Tcpip: Dns_forward_s.TCPIP) = struct
+
+  type t = unit
+
+  let make _config =
+    ()
+
+end

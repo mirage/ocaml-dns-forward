@@ -14,3 +14,13 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
+
+ module Make(Tcpip: Dns_forward_s.TCPIP): sig
+
+  type t
+  (** A forwarding DNS proxy *)
+
+  val make: Dns_forward_config.t -> t
+  (** Construct a forwarding DNS proxy given some configuration *)
+
+ end

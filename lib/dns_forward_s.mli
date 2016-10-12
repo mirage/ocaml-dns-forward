@@ -47,3 +47,17 @@ module type SERVER = sig
   val shutdown: server -> unit Lwt.t
   (** Stop accepting connections on the given server *)
 end
+
+module type TCPIP = sig
+  type address = Ipaddr.t * int
+
+  type flow
+
+  include CLIENT
+    with type address := address
+     and type flow := flow
+  include SERVER
+    with type address := address
+     and type flow := flow
+
+end
