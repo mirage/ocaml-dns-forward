@@ -15,7 +15,7 @@
  *
  *)
 
-module type CLIENT = sig
+module type FLOW_CLIENT = sig
   include Mirage_flow_s.SHUTDOWNABLE
 
   type address
@@ -26,7 +26,7 @@ module type CLIENT = sig
       he connected flow. *)
 end
 
-module type SERVER = sig
+module type FLOW_SERVER = sig
   type server
   (* A server bound to some address *)
 
@@ -53,11 +53,10 @@ module type TCPIP = sig
 
   type flow
 
-  include CLIENT
+  include FLOW_CLIENT
     with type address := address
      and type flow := flow
-  include SERVER
+  include FLOW_SERVER
     with type address := address
      and type flow := flow
-
 end
