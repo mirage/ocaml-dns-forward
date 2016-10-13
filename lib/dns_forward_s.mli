@@ -60,3 +60,20 @@ module type TCPIP = sig
     with type address := address
      and type flow := flow
 end
+
+module type RPC_CLIENT = sig
+  type request = Cstruct.t
+  type response = Cstruct.t
+  type address = Dns_forward_config.address
+  type t
+  val connect: address -> [ `Ok of t | `Error of [ `Msg of string ] ] Lwt.t
+  val rpc: t -> request -> [ `Ok of response | `Error of [ `Msg of string ] ] Lwt.t
+  val disconnect: t -> unit Lwt.t
+end
+
+module type RPC_SERVER = sig
+  type request
+  type response
+  type t
+  val listen: t -> (request -> response option Lwt.t) -> unit Lwt.t
+end

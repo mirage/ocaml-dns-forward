@@ -39,7 +39,9 @@ module Time = struct
   type 'a io = 'a Lwt.t
   let sleep = Lwt_unix.sleep
 end
-module Forwarder = Dns_forward.Make(Dns_forward_lwt_unix.Udp)(Dns_forward_lwt_unix.Udp)(Time)
+
+module Udp_client = Dns_forward_udp.Make(Dns_forward_lwt_unix.Udp)
+module Forwarder = Dns_forward.Make(Dns_forward_lwt_unix.Udp)(Udp_client)(Time)
 
 let max_udp_length = 65507
 

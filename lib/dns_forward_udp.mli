@@ -15,17 +15,9 @@
  *
  *)
 
- module Make(Input: Dns_forward_s.TCPIP)(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME): sig
+(** DNS over UDP uses the UDP datagrams to delineate message boundaries *)
 
-  type t
-  (** A forwarding DNS proxy *)
-
-  val make: Dns_forward_config.t -> t
-  (** Construct a forwarding DNS proxy given some configuration *)
-
-  val answer: t -> Cstruct.t -> Cstruct.t option Lwt.t
-  (** Given a DNS request, construct an response *)
-
-  val serve: t -> (Ipaddr.t * int) -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
-  (** Serve requests on the given IP and port forever *)
- end
+module Make(Udp: Dns_forward_s.TCPIP):
+  Dns_forward_s.RPC_CLIENT
+    with type request = Cstruct.t
+     and type response = Cstruct.t
