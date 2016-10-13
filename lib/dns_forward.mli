@@ -15,7 +15,7 @@
  *
  *)
 
- module Make(Input: Dns_forward_s.TCPIP)(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME): sig
+ module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME): sig
 
   type t
   (** A forwarding DNS proxy *)
@@ -23,9 +23,9 @@
   val make: Dns_forward_config.t -> t
   (** Construct a forwarding DNS proxy given some configuration *)
 
-  val answer: t -> Cstruct.t -> Cstruct.t option Lwt.t
+  val answer: t -> Cstruct.t -> [ `Ok of Cstruct.t | `Error of [ `Msg of string ] ] Lwt.t
   (** Given a DNS request, construct an response *)
 
-  val serve: t -> (Ipaddr.t * int) -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
+  val serve: t -> Dns_forward_config.address -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
   (** Serve requests on the given IP and port forever *)
  end

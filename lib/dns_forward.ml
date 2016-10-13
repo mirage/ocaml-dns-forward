@@ -62,7 +62,7 @@ let or_fail_msg m = m >>= function
   | `Error (`Msg m) -> Lwt.fail (Failure m)
   | `Ok x -> Lwt.return x
 
-module Make(Input: Dns_forward_s.TCPIP)(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
+module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
 
   type t = {
     config: Dns_forward_config.t;
@@ -90,30 +90,19 @@ module Make(Input: Dns_forward_s.TCPIP)(Client: Dns_forward_s.RPC_CLIENT)(Time: 
         Lwt.return (Some reply) in
 
       (* Pick the first reply to come back, or timeout *)
-      Lwt.pick @@ (Time.sleep 2. >>= fun () -> Lwt.return None) :: (List.map rpc servers)
+      ( Lwt.pick @@ (Time.sleep 2. >>= fun () -> Lwt.return None) :: (List.map rpc servers)
+        >>= function
+        | None -> Lwt.return (`Error (`Msg "no response within the timeout"))
+        | Some reply -> Lwt.return (`Ok reply)
+      )
     | None ->
-      Log.debug (fun f -> f "failed to parse request");
-      Lwt.return_none
+      Lwt.return (`Error (`Msg "failed to parse request"))
 
-  let serve t (ip, port) =
-    let open Dns_forward_lwt_unix.Udp in
-    bind (ip, port)
-    >>= function
-    | `Error (`Msg _) -> Lwt.return (`Error(`Msg "please supply a free port number"))
-    | `Ok server ->
-      listen server (fun flow ->
-        ( read flow
-          >>= function
-          | `Error _ | `Eof -> Lwt.return_unit
-          | `Ok request ->
-            ( answer t request
-              >>= function
-              | None -> Lwt.return_unit
-              | Some response ->
-                ( write flow response
-                  >>= function
-                  | `Error _ | `Eof -> Lwt.return_unit
-                  | `Ok () -> Lwt.return_unit ) ) )
-        );
-      Lwt.return (`Ok ())
+  let serve t address =
+    let open Dns_forward_error.Infix in
+    Server.bind address
+    >>= fun server ->
+    Server.listen server (answer t)
+    >>= fun () ->
+    Lwt.return (`Ok ())
 end

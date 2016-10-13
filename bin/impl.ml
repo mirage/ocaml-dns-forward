@@ -40,11 +40,11 @@ module Time = struct
   let sleep = Lwt_unix.sleep
 end
 
-module Udp_client = Dns_forward_udp.Make(Dns_forward_lwt_unix.Udp)
-module Udp_forwarder = Dns_forward.Make(Dns_forward_lwt_unix.Udp)(Udp_client)(Time)
+module Udp = Dns_forward_udp.Make(Dns_forward_lwt_unix.Udp)
+module Udp_forwarder = Dns_forward.Make(Udp)(Udp)(Time)
 
-module Tcp_client = Dns_forward_tcp.Make(Dns_forward_lwt_unix.Tcp)
-module Tcp_forwarder = Dns_forward.Make(Dns_forward_lwt_unix.Tcp)(Tcp_client)(Time)
+module Tcp = Dns_forward_tcp.Make(Dns_forward_lwt_unix.Tcp)
+module Tcp_forwarder = Dns_forward.Make(Tcp)(Tcp)(Time)
 
 let max_udp_length = 65507
 
@@ -58,7 +58,7 @@ let serve port filename =
     let config = Dns_forward_config.t_of_sexp @@ Sexplib.Sexp.of_string all in
     let udp = Udp_forwarder.make config in
     let tcp = Tcp_forwarder.make config in
-    let address = Ipaddr.V4 Ipaddr.V4.localhost, port in
+    let address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
     let t =
       let open Dns_forward_error.Infix in
       Udp_forwarder.serve udp address
