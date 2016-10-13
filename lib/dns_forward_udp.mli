@@ -17,7 +17,18 @@
 
 (** DNS over UDP uses the UDP datagrams to delineate message boundaries *)
 
-module Make(Udp: Dns_forward_s.TCPIP):
-  Dns_forward_s.RPC_CLIENT
-    with type request = Cstruct.t
-     and type response = Cstruct.t
+module Make(Udp: Dns_forward_s.TCPIP): sig
+  type request = Cstruct.t
+  type response = Cstruct.t
+  type address = Dns_forward_config.address
+
+  include Dns_forward_s.RPC_CLIENT
+    with type request  := request
+     and type response := response
+     and type address  := address
+
+  include Dns_forward_s.RPC_SERVER
+    with type request  := request
+     and type response := response
+     and type address  := address
+end

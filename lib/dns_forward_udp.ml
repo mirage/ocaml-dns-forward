@@ -56,4 +56,35 @@ module Make(Udp: Dns_forward_s.TCPIP) = struct
     >>= fun reply ->
     Lwt.return (`Ok reply)
 
+  type server = {
+    address: address;
+    server: Udp.server;
+  }
+
+  let bind address =
+    let open Error in
+    Udp.bind (address.Dns_forward_config.ip, address.Dns_forward_config.port)
+    >>= fun server ->
+    Lwt.return (`Ok { address; server })
+
+  let listen { server; _ } cb =
+    let open Lwt.Infix in
+    Udp.listen server (fun flow ->
+      ( Udp.read flow
+        >>= function
+        | `Error _ | `Eof -> Lwt.return_unit
+        | `Ok request ->
+          ( cb request
+            >>= function
+            | `Error _ -> Lwt.return_unit
+            | `Ok response ->
+              ( Udp.write flow response
+                >>= function
+                | `Error _ | `Eof -> Lwt.return_unit
+                | `Ok () -> Lwt.return_unit ) ) )
+      );
+    Lwt.return (`Ok ())
+
+  let shutdown server =
+    Udp.shutdown server.server
 end

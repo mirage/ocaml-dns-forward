@@ -72,8 +72,12 @@ module type RPC_CLIENT = sig
 end
 
 module type RPC_SERVER = sig
-  type request
-  type response
-  type t
-  val listen: t -> (request -> response option Lwt.t) -> unit Lwt.t
+  type request = Cstruct.t
+  type response = Cstruct.t
+  type address = Dns_forward_config.address
+
+  type server
+  val bind: address -> [ `Ok of server | `Error of [ `Msg of string ] ] Lwt.t
+  val listen: server -> (request -> [ `Ok of response | `Error of [ `Msg of string ] ] Lwt.t) -> [`Ok of unit | `Error of [ `Msg of string ]] Lwt.t
+  val shutdown: server -> unit Lwt.t
 end
