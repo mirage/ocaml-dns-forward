@@ -32,7 +32,7 @@ module type SERVER = sig
 
   type address
 
-  val bind: address -> server Lwt.t
+  val bind: address -> [ `Ok of server | `Error of [ `Msg of string ]] Lwt.t
   (** Bind a server to an address *)
 
   val getsockname: server -> address
@@ -46,4 +46,18 @@ module type SERVER = sig
 
   val shutdown: server -> unit Lwt.t
   (** Stop accepting connections on the given server *)
+end
+
+module type TCPIP = sig
+  type address = Ipaddr.t * int
+
+  type flow
+
+  include CLIENT
+    with type address := address
+     and type flow := flow
+  include SERVER
+    with type address := address
+     and type flow := flow
+
 end

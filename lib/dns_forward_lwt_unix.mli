@@ -15,5 +15,5 @@
  *
  *)
 
- module Tcp_client: Dns_forward_s.CLIENT
- (* module Tcp_server: Dns_forward_s.SERVER*)
+module Tcp: Dns_forward_s.TCPIP
+module Udp: Dns_forward_s.TCPIP

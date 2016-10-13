@@ -20,7 +20,7 @@ type address = {
   port: int;
 }
 
-type domain = string
+type domain = string list
 
 type server = {
   zones: domain list; (** use this server for these specific domains *)

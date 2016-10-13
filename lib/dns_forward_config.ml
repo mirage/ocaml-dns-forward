@@ -21,7 +21,7 @@ type address = {
   port: int;
 } [@@deriving sexp]
 
-type domain = string [@@deriving sexp]
+type domain = string list [@@deriving sexp]
 
 type server = {
   zones: domain list;

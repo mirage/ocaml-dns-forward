@@ -11,3 +11,15 @@ Planned features
 - support for sending queries to specific servers based on domain
 - dynamic configuration updates
 - extra records (e.g. from /etc/hosts)
+
+## Simple usage
+
+```sh
+make
+./_build/bin/main.native doc/example.config
+```
+and then send queries as follows:
+```
+dig @127.0.0.1 -p 5555 www.google.com
+dig @127.0.0.1 -p 5555 www.docker.com
+```
