@@ -15,7 +15,7 @@
  *
  *)
 
-module type CLIENT = sig
+module type FLOW_CLIENT = sig
   include Mirage_flow_s.SHUTDOWNABLE
 
   type address
@@ -26,7 +26,7 @@ module type CLIENT = sig
       he connected flow. *)
 end
 
-module type SERVER = sig
+module type FLOW_SERVER = sig
   type server
   (* A server bound to some address *)
 
@@ -53,11 +53,31 @@ module type TCPIP = sig
 
   type flow
 
-  include CLIENT
+  include FLOW_CLIENT
     with type address := address
      and type flow := flow
-  include SERVER
+  include FLOW_SERVER
     with type address := address
      and type flow := flow
+end
 
+module type RPC_CLIENT = sig
+  type request = Cstruct.t
+  type response = Cstruct.t
+  type address = Dns_forward_config.address
+  type t
+  val connect: address -> [ `Ok of t | `Error of [ `Msg of string ] ] Lwt.t
+  val rpc: t -> request -> [ `Ok of response | `Error of [ `Msg of string ] ] Lwt.t
+  val disconnect: t -> unit Lwt.t
+end
+
+module type RPC_SERVER = sig
+  type request = Cstruct.t
+  type response = Cstruct.t
+  type address = Dns_forward_config.address
+
+  type server
+  val bind: address -> [ `Ok of server | `Error of [ `Msg of string ] ] Lwt.t
+  val listen: server -> (request -> [ `Ok of response | `Error of [ `Msg of string ] ] Lwt.t) -> [`Ok of unit | `Error of [ `Msg of string ]] Lwt.t
+  val shutdown: server -> unit Lwt.t
 end

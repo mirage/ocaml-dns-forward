@@ -15,17 +15,20 @@
  *
  *)
 
- module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME): sig
+(** DNS over TCP uses a simple header to delineate message boundaries *)
 
-  type t
-  (** A forwarding DNS proxy *)
+module Make(Tcp: Dns_forward_s.TCPIP): sig
+  type request = Cstruct.t
+  type response = Cstruct.t
+  type address = Dns_forward_config.address
 
-  val make: Dns_forward_config.t -> t
-  (** Construct a forwarding DNS proxy given some configuration *)
+  include Dns_forward_s.RPC_CLIENT
+    with type request  := request
+     and type response := response
+     and type address  := address
 
-  val answer: t -> Cstruct.t -> [ `Ok of Cstruct.t | `Error of [ `Msg of string ] ] Lwt.t
-  (** Given a DNS request, construct an response *)
-
-  val serve: t -> Dns_forward_config.address -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
-  (** Serve requests on the given IP and port forever *)
- end
+  include Dns_forward_s.RPC_SERVER
+    with type request  := request
+     and type response := response
+     and type address  := address
+end

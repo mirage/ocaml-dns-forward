@@ -39,7 +39,12 @@ module Time = struct
   type 'a io = 'a Lwt.t
   let sleep = Lwt_unix.sleep
 end
-module Forwarder = Dns_forward.Make(Dns_forward_lwt_unix.Udp)(Time)
+
+module Udp = Dns_forward_udp.Make(Dns_forward_lwt_unix.Udp)
+module Udp_forwarder = Dns_forward.Make(Udp)(Udp)(Time)
+
+module Tcp = Dns_forward_tcp.Make(Dns_forward_lwt_unix.Tcp)
+module Tcp_forwarder = Dns_forward.Make(Tcp)(Tcp)(Time)
 
 let max_udp_length = 65507
 
@@ -51,26 +56,18 @@ let serve port filename =
     >>= fun lines ->
     let all = String.concat "" lines in
     let config = Dns_forward_config.t_of_sexp @@ Sexplib.Sexp.of_string all in
-    let forwarder = Forwarder.make config in
-    let open Dns_forward_lwt_unix.Udp in
-    bind (Ipaddr.V4 Ipaddr.V4.localhost, port)
-    >>= function
-    | `Error (`Msg _) -> Lwt.return (`Error(true, "please supply a free port number"))
-    | `Ok server ->
-      listen server (fun flow ->
-        ( read flow
-          >>= function
-          | `Error _ | `Eof -> Lwt.return_unit
-          | `Ok request ->
-            ( Forwarder.answer forwarder request
-              >>= function
-              | None -> Lwt.return_unit
-              | Some response ->
-                ( write flow response
-                  >>= function
-                  | `Error _ | `Eof -> Lwt.return_unit
-                  | `Ok () -> Lwt.return_unit ) ) )
-      );
+    let udp = Udp_forwarder.make config in
+    let tcp = Tcp_forwarder.make config in
+    let address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
+    let t =
+      let open Dns_forward_error.Infix in
+      Udp_forwarder.serve udp address
+      >>= fun () ->
+      Tcp_forwarder.serve tcp address
+      >>= fun () ->
       let t, _ = Lwt.task () in
-      t
+      t in
+    t >>= function
+    | `Error (`Msg m) -> Lwt.return (`Error(true, m))
+    | `Ok () -> Lwt.return (`Ok ())
   end

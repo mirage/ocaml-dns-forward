@@ -62,16 +62,11 @@ let or_fail_msg m = m >>= function
   | `Error (`Msg m) -> Lwt.fail (Failure m)
   | `Ok x -> Lwt.return x
 
-module Make(Tcpip: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME) = struct
+module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
 
   type t = {
     config: Dns_forward_config.t;
   }
-
-  let or_fail_flow m = m >>= function
-    | `Eof -> Lwt.fail End_of_file
-    | `Error e -> Lwt.fail (Failure (Tcpip.error_message e))
-    | `Ok x -> Lwt.return x
 
   let make config =
     { config }
@@ -86,19 +81,28 @@ module Make(Tcpip: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME) = struct
       let rpc server =
         let open Dns_forward_config in
         Log.debug (fun f -> f "forwarding to server %s:%d" (Ipaddr.to_string server.address.ip) server.address.port);
-        or_fail_msg @@ Tcpip.connect (server.address.ip, server.address.port)
-        >>= fun flow ->
-        or_fail_flow @@ Tcpip.write flow buffer
-        >>= fun () ->
-        or_fail_flow @@ Tcpip.read flow
+        or_fail_msg @@ Client.connect server.address
+        >>= fun client ->
+        or_fail_msg @@ Lwt.finalize
+          (fun () -> Client.rpc client buffer)
+          (fun _ -> Client.disconnect client)
         >>= fun reply ->
-        Tcpip.close flow
-        >>= fun () ->
         Lwt.return (Some reply) in
 
       (* Pick the first reply to come back, or timeout *)
-      Lwt.pick @@ (Time.sleep 2. >>= fun () -> Lwt.return None) :: (List.map rpc servers)
+      ( Lwt.pick @@ (Time.sleep 2. >>= fun () -> Lwt.return None) :: (List.map rpc servers)
+        >>= function
+        | None -> Lwt.return (`Error (`Msg "no response within the timeout"))
+        | Some reply -> Lwt.return (`Ok reply)
+      )
     | None ->
-      Log.debug (fun f -> f "failed to parse request");
-      Lwt.return_none
+      Lwt.return (`Error (`Msg "failed to parse request"))
+
+  let serve t address =
+    let open Dns_forward_error.Infix in
+    Server.bind address
+    >>= fun server ->
+    Server.listen server (answer t)
+    >>= fun () ->
+    Lwt.return (`Ok ())
 end
