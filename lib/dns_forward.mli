@@ -15,7 +15,7 @@
  *
  *)
 
- module Make(Tcpip: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME): sig
+ module Make(Input: Dns_forward_s.TCPIP)(Output: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME): sig
 
   type t
   (** A forwarding DNS proxy *)
@@ -26,4 +26,6 @@
   val answer: t -> Cstruct.t -> Cstruct.t option Lwt.t
   (** Given a DNS request, construct an response *)
 
+  val serve: t -> (Ipaddr.t * int) -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
+  (** Serve requests on the given IP and port forever *)
  end

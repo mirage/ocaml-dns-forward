@@ -62,7 +62,7 @@ let or_fail_msg m = m >>= function
   | `Error (`Msg m) -> Lwt.fail (Failure m)
   | `Ok x -> Lwt.return x
 
-module Make(Tcpip: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME) = struct
+module Make(Input: Dns_forward_s.TCPIP)(Output: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME) = struct
 
   type t = {
     config: Dns_forward_config.t;
@@ -70,7 +70,7 @@ module Make(Tcpip: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME) = struct
 
   let or_fail_flow m = m >>= function
     | `Eof -> Lwt.fail End_of_file
-    | `Error e -> Lwt.fail (Failure (Tcpip.error_message e))
+    | `Error e -> Lwt.fail (Failure (Output.error_message e))
     | `Ok x -> Lwt.return x
 
   let make config =
@@ -86,13 +86,13 @@ module Make(Tcpip: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME) = struct
       let rpc server =
         let open Dns_forward_config in
         Log.debug (fun f -> f "forwarding to server %s:%d" (Ipaddr.to_string server.address.ip) server.address.port);
-        or_fail_msg @@ Tcpip.connect (server.address.ip, server.address.port)
+        or_fail_msg @@ Output.connect (server.address.ip, server.address.port)
         >>= fun flow ->
-        or_fail_flow @@ Tcpip.write flow buffer
+        or_fail_flow @@ Output.write flow buffer
         >>= fun () ->
-        or_fail_flow @@ Tcpip.read flow
+        or_fail_flow @@ Output.read flow
         >>= fun reply ->
-        Tcpip.close flow
+        Output.close flow
         >>= fun () ->
         Lwt.return (Some reply) in
 
@@ -101,4 +101,26 @@ module Make(Tcpip: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME) = struct
     | None ->
       Log.debug (fun f -> f "failed to parse request");
       Lwt.return_none
+
+  let serve t (ip, port) =
+    let open Dns_forward_lwt_unix.Udp in
+    bind (ip, port)
+    >>= function
+    | `Error (`Msg _) -> Lwt.return (`Error(`Msg "please supply a free port number"))
+    | `Ok server ->
+      listen server (fun flow ->
+        ( read flow
+          >>= function
+          | `Error _ | `Eof -> Lwt.return_unit
+          | `Ok request ->
+            ( answer t request
+              >>= function
+              | None -> Lwt.return_unit
+              | Some response ->
+                ( write flow response
+                  >>= function
+                  | `Error _ | `Eof -> Lwt.return_unit
+                  | `Ok () -> Lwt.return_unit ) ) )
+        );
+      Lwt.return (`Ok ())
 end
