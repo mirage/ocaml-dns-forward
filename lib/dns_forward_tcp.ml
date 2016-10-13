@@ -29,27 +29,45 @@ module Make(Tcp: Dns_forward_s.TCPIP) = struct
 
   type t = {
     address: address;
-    c: C.t;
+    mutable c: C.t option;
+    m: Lwt_mutex.t;
   }
-
-  type request = Cstruct.t
-  type response = Cstruct.t
 
   module Error = Dns_forward_error.Infix
   module FlowError = Dns_forward_error.FromFlowError(Tcp)
+
+  let get_c t =
+    Lwt_mutex.with_lock t.m
+      (fun () -> match t.c with
+        | None ->
+          let open Error in
+          Tcp.connect (t.address.Dns_forward_config.ip, t.address.Dns_forward_config.port)
+          >>= fun flow ->
+          let c = C.create flow in
+          t.c <- Some c;
+          Lwt.return (`Ok c)
+        | Some c ->
+          Lwt.return (`Ok c))
+
+  type request = Cstruct.t
+  type response = Cstruct.t
 
   let connect address =
     Log.debug (fun f -> f "forwarding to server %s:%d"
       (Ipaddr.to_string address.Dns_forward_config.ip)
       address.Dns_forward_config.port);
-    let open Error in
-    Tcp.connect (address.Dns_forward_config.ip, address.Dns_forward_config.port)
-    >>= fun flow ->
-    let c = C.create flow in
-    Lwt.return (`Ok { address; c })
+    let c = None in
+    let m = Lwt_mutex.create () in
+    Lwt.return (`Ok { address; c; m })
 
-  let disconnect { c; _ } =
-    Tcp.close @@ C.to_flow c
+  let disconnect = function
+    | { c = Some c; m; _ } as t ->
+      t.c <- None;
+      Lwt_mutex.with_lock m
+        (fun () ->
+          Tcp.close @@ C.to_flow c
+        )
+    | _ -> Lwt.return_unit
 
   let write_buffer c buffer =
     (* RFC 1035 4.2.2 TCP Usage: 2 byte length field *)
@@ -70,10 +88,13 @@ module Make(Tcp: Dns_forward_s.TCPIP) = struct
     Lwt.return (Cstruct.concat bufs)
 
   let rpc (t: t) request =
+    let open Error in
+    get_c t
+    >>= fun c ->
     let open Lwt.Infix in
-    write_buffer t.c request
+    write_buffer c request
     >>= fun () ->
-    read_buffer t.c
+    read_buffer c
     >>= fun buf ->
     Lwt.return (`Ok buf)
 
