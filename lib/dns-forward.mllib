@@ -2,4 +2,5 @@ Dns_forward
 Dns_forward_config
 Dns_forward_lwt_unix
 Dns_forward_udp
+Dns_forward_tcp
 Dns_forward_error
