@@ -114,11 +114,26 @@ module Make(Tcp: Dns_forward_s.TCPIP) = struct
 
   let rpc (t: t) request =
     let open Error in
+    (* If we fail to connect, return the error *)
     get_c t
     >>= fun c ->
+    let open Lwt.Infix in
+    (* An existing connection to the server might have been closed by the server;
+       therefore if we fail to write the request, reconnect and try once more. *)
     write_buffer c request
-    >>= fun () ->
-    read_buffer c
+    >>= function
+    | `Ok () ->
+      read_buffer c
+    | `Error (`Msg m) ->
+      Log.info (fun f -> f "caught %s writing request, attempting to reconnect" m);
+      disconnect t
+      >>= fun () ->
+      let open Error in
+      get_c t
+      >>= fun c ->
+      write_buffer c request
+      >>= fun () ->
+      read_buffer c
 
   type server = {
     address: address;
