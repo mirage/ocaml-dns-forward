@@ -35,6 +35,7 @@ module Make(Tcp: Dns_forward_s.TCPIP) = struct
 
   module Error = Dns_forward_error.Infix
   module FlowError = Dns_forward_error.FromFlowError(Tcp)
+  let errorf = Dns_forward_error.errorf
 
   let get_c t =
     Lwt_mutex.with_lock t.m
@@ -75,28 +76,49 @@ module Make(Tcp: Dns_forward_s.TCPIP) = struct
     Cstruct.BE.set_uint16 header 0 (Cstruct.len buffer);
     C.write_buffer c header;
     C.write_buffer c buffer;
-    C.flush c
+    Lwt.catch
+      (fun () ->
+        let open Lwt.Infix in
+        C.flush c
+        >>= fun () ->
+        Lwt.return (`Ok ())
+      ) (fun e ->
+        errorf "Failed to write %d bytes: %s" (Cstruct.len buffer) (Printexc.to_string e)
+      )
 
   let read_buffer c =
-    let open Lwt.Infix in
-    C.read_exactly ~len:2 c
+    let open Error in
+    Lwt.catch
+      (fun () ->
+        let open Lwt.Infix in
+        C.read_exactly ~len:2 c
+        >>= fun bufs ->
+        Lwt.return (`Ok bufs)
+      ) (fun e ->
+        errorf "Failed to read response header: %s" (Printexc.to_string e)
+      )
     >>= fun bufs ->
     let buf = Cstruct.concat bufs in
     let len = Cstruct.BE.get_uint16 buf 0 in
-    C.read_exactly ~len c
+    Lwt.catch
+      (fun () ->
+        let open Lwt.Infix in
+        C.read_exactly ~len c
+        >>= fun bufs ->
+        Lwt.return (`Ok bufs)
+      ) (fun e ->
+        errorf "Failed to read response payload (%d bytes): %s" len (Printexc.to_string e)
+      )
     >>= fun bufs ->
-    Lwt.return (Cstruct.concat bufs)
+    Lwt.return (`Ok (Cstruct.concat bufs))
 
   let rpc (t: t) request =
     let open Error in
     get_c t
     >>= fun c ->
-    let open Lwt.Infix in
     write_buffer c request
     >>= fun () ->
     read_buffer c
-    >>= fun buf ->
-    Lwt.return (`Ok buf)
 
   type server = {
     address: address;
@@ -110,23 +132,33 @@ module Make(Tcp: Dns_forward_s.TCPIP) = struct
     Lwt.return (`Ok { address; server })
 
   let listen { server; _ } cb =
-    let open Lwt.Infix in
     Tcp.listen server (fun flow ->
+      let open Lwt.Infix in
       let c = C.create flow in
       let rec loop () =
+        let open Error in
         read_buffer c
         >>= fun request ->
         (* FIXME: need to run these in the background *)
         (* FIXME: need to rewrite transaction IDs if the requests come from
            different resolvers *)
+        let open Lwt.Infix in
         cb request
         >>= function
-        | `Error _ -> Lwt.return_unit
+        | `Error _ ->
+          loop ()
         | `Ok response ->
+          let open Error in
           write_buffer c response
           >>= fun () ->
           loop () in
       loop ()
+      >>= function
+      | `Error (`Msg m) ->
+        Log.err (fun f -> f "server loop failed with: %s" m);
+        Lwt.return_unit
+      | `Ok () ->
+        Lwt.return_unit
     );
     Lwt.return (`Ok ())
 

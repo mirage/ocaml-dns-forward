@@ -28,3 +28,5 @@ module FromFlowError(Flow: V1_LWT.FLOW) = struct
     | `Error e -> Lwt.return (`Error (`Msg (Flow.error_message e)))
     | `Ok x -> f x
 end
+
+let errorf fmt = Printf.ksprintf (fun s -> Lwt.return (`Error (`Msg s))) fmt

@@ -25,3 +25,5 @@ module FromFlowError(Flow: V1_LWT.FLOW): sig
     ('b -> ([> `Error of [> `Msg of string ] ] as 'c) Lwt.t) -> 'c Lwt.t
 
 end
+
+val errorf: ('a, unit, string, [> `Error of [> `Msg of string ] ] Lwt.t) format4 -> 'a
