@@ -43,7 +43,7 @@ end
 module Udp = Dns_forward_udp.Make(Dns_forward_lwt_unix.Udp)
 module Udp_forwarder = Dns_forward.Make(Udp)(Udp)(Time)
 
-module Tcp = Dns_forward_tcp.Make(Dns_forward_lwt_unix.Tcp)
+module Tcp = Dns_forward_tcp.Make(Dns_forward_lwt_unix.Tcp)(Time)
 module Tcp_forwarder = Dns_forward.Make(Tcp)(Tcp)(Time)
 
 let max_udp_length = 65507

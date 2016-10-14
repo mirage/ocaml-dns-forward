@@ -23,3 +23,7 @@ and then send queries as follows:
 dig @127.0.0.1 -p 5555 www.google.com
 dig @127.0.0.1 -p 5555 www.docker.com
 ```
+
+## References
+
+- [DNS Transport over TCP - Implementation Requirements](https://tools.ietf.org/html/rfc5966)
