@@ -22,7 +22,7 @@ let src =
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
-module Make(Tcp: Dns_forward_s.TCPIP) = struct
+module Make(Tcp: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME) = struct
   type address = Dns_forward_config.address
 
   module C = Channel.Make(Tcp)
@@ -30,6 +30,7 @@ module Make(Tcp: Dns_forward_s.TCPIP) = struct
   type t = {
     address: address;
     mutable c: C.t option;
+    mutable disconnect_on_idle: unit Lwt.t;
     m: Lwt_mutex.t;
   }
 
@@ -37,11 +38,21 @@ module Make(Tcp: Dns_forward_s.TCPIP) = struct
   module FlowError = Dns_forward_error.FromFlowError(Tcp)
   let errorf = Dns_forward_error.errorf
 
+  let disconnect = function
+    | { c = Some c; m; _ } as t ->
+      t.c <- None;
+      Lwt_mutex.with_lock m
+        (fun () ->
+          Tcp.close @@ C.to_flow c
+        )
+    | _ -> Lwt.return_unit
+
   let get_c t =
+    let open Error in
+    Lwt.cancel t.disconnect_on_idle;
     Lwt_mutex.with_lock t.m
       (fun () -> match t.c with
         | None ->
-          let open Error in
           Tcp.connect (t.address.Dns_forward_config.ip, t.address.Dns_forward_config.port)
           >>= fun flow ->
           let c = C.create flow in
@@ -49,6 +60,10 @@ module Make(Tcp: Dns_forward_s.TCPIP) = struct
           Lwt.return (`Ok c)
         | Some c ->
           Lwt.return (`Ok c))
+    >>= fun c ->
+    (* Add a fresh idle timer *)
+    t.disconnect_on_idle <- (let open Lwt.Infix in Time.sleep 30. >>= fun () -> disconnect t);
+    Lwt.return (`Ok c)
 
   type request = Cstruct.t
   type response = Cstruct.t
@@ -59,16 +74,8 @@ module Make(Tcp: Dns_forward_s.TCPIP) = struct
       address.Dns_forward_config.port);
     let c = None in
     let m = Lwt_mutex.create () in
-    Lwt.return (`Ok { address; c; m })
-
-  let disconnect = function
-    | { c = Some c; m; _ } as t ->
-      t.c <- None;
-      Lwt_mutex.with_lock m
-        (fun () ->
-          Tcp.close @@ C.to_flow c
-        )
-    | _ -> Lwt.return_unit
+    let disconnect_on_idle = Lwt.return_unit in
+    Lwt.return (`Ok { address; c; disconnect_on_idle; m })
 
   let write_buffer c buffer =
     (* RFC 1035 4.2.2 TCP Usage: 2 byte length field *)
