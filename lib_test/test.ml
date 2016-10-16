@@ -50,11 +50,63 @@ let test_server () =
   | `Ok () -> ()
   | `Error (`Msg m) -> failwith m
 
+module Time = struct
+  type 'a io = 'a Lwt.t
+  let sleep = Lwt_unix.sleep
+end
+
+let test_forwarder_zone () =
+  match Lwt_main.run begin
+    let module S = Server.Make(Rpc) in
+    let foo_public = "8.8.8.8" in
+    let foo_private = "192.168.1.1" in
+    (* a VPN mapping 'foo' to an internal ip *)
+    let foo_server = S.make [ "foo", Ipaddr.of_string_exn foo_private ] in
+    let foo_address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 1 } in
+    let open Error in
+    S.serve foo_server foo_address
+    >>= fun () ->
+    (* a public server mapping 'foo' to a public ip *)
+    let bar_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
+    let bar_address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 2 } in
+    S.serve bar_server bar_address
+    >>= fun () ->
+    (* a forwarder which uses both servers *)
+    let module F = Dns_forward.Make(Rpc)(Rpc)(Time) in
+    let config = [
+      { Dns_forward_config.address = foo_address; zones = [ [ "foo" ] ] };
+      { Dns_forward_config.address = bar_address; zones = [] }
+    ] in
+    let open Lwt.Infix in
+    F.make config
+    >>= fun f ->
+    let f_address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 3 } in
+    let open Error in
+    F.serve f f_address
+    >>= fun () ->
+    Rpc.connect f_address
+    >>= fun c ->
+    let request = make_a_query (Dns.Name.of_string "foo") in
+    Rpc.rpc c request
+    >>= fun response ->
+    parse_response response
+    >>= fun ipv4 ->
+    Alcotest.(check string) "IPv4" foo_private (Ipaddr.V4.to_string ipv4);
+    Lwt.return (`Ok ())
+  end with
+  | `Ok () -> ()
+  | `Error (`Msg m) -> failwith m
+
 let test_infra_set = [
   "Server responds correctly", `Quick, test_server;
+]
+
+let test_forwarder_set = [
+  "Zone config respected", `Quick, test_forwarder_zone;
 ]
 
 let () =
   Alcotest.run "dns-forward" [
     "Test infrastructure", test_infra_set;
+    "Test forwarding", test_forwarder_set;
   ]
