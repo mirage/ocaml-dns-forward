@@ -166,7 +166,6 @@ module Make(Tcp: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME) = struct
       )
 
   let rpc (t: t) buffer =
-    let open Error in
     let buf = Dns.Buf.of_cstruct buffer in
     match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 (Cstruct.len buffer)) with
     | None ->
@@ -179,30 +178,36 @@ module Make(Tcp: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME) = struct
 
       let th, u = Lwt.task () in
       Hashtbl.replace t.wakeners fresh_id u;
-      Lwt_mutex.with_lock t.write_m
-        (fun () ->
-          (* If we fail to connect, return the error *)
+
+      (* If we fail to connect, return the error *)
+      let open Lwt.Infix in
+      begin
+        let open Error in
+        get_c t
+        >>= fun c ->
+        let open Lwt.Infix in
+
+        (* An existing connection to the server might have been closed by the server;
+           therefore if we fail to write the request, reconnect and try once more. *)
+        Lwt_mutex.with_lock t.write_m (fun () -> write_buffer c buffer)
+        >>= function
+        | `Ok () ->
+          Lwt.return (`Ok ())
+        | `Error (`Msg m) ->
+          Log.info (fun f -> f "caught %s writing request, attempting to reconnect" m);
+          disconnect t
+          >>= fun () ->
+          let open Error in
           get_c t
           >>= fun c ->
-          let open Lwt.Infix in
-
-          (* An existing connection to the server might have been closed by the server;
-             therefore if we fail to write the request, reconnect and try once more. *)
-          write_buffer c buffer
-          >>= function
-          | `Ok () ->
-            Lwt.return (`Ok ())
-          | `Error (`Msg m) ->
-            Log.info (fun f -> f "caught %s writing request, attempting to reconnect" m);
-            disconnect t
-            >>= fun () ->
-            let open Error in
-            get_c t
-            >>= fun c ->
-            write_buffer c buffer
-        )
-      >>= fun () ->
-      th (* will be woken up by the dispatcher *)
+          Lwt_mutex.with_lock t.write_m (fun () -> write_buffer c buffer)
+      end
+      >>= function
+      | `Error (`Msg m) ->
+        Hashtbl.remove t.wakeners fresh_id;
+        Lwt.return (`Error (`Msg m))
+      | `Ok () ->
+        th (* will be woken up by the dispatcher *)
 
   type server = {
     address: address;
