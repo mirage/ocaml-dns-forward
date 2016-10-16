@@ -40,11 +40,12 @@ module Make(Tcp: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME) = struct
   module FlowError = Dns_forward_error.FromFlowError(Tcp)
   let errorf = Dns_forward_error.errorf
 
-  let disconnect = function
-    | { c = Some c; m; _ } as t ->
-      t.c <- None;
-      Lwt_mutex.with_lock m
-        (fun () ->
+  let disconnect t =
+    Lwt_mutex.with_lock t.m
+      (fun () ->
+        match t with
+        | { c = Some c; _ } as t ->
+          t.c <- None;
           let tbl = Hashtbl.copy t.wakeners in
           Hashtbl.clear t.wakeners;
           let error = `Error (`Msg "connection to server was closed") in
@@ -53,8 +54,8 @@ module Make(Tcp: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME) = struct
             Lwt.wakeup_later u error
           ) tbl;
           Tcp.close @@ C.to_flow c
-        )
-    | _ -> Lwt.return_unit
+        | _ -> Lwt.return_unit
+      )
 
   let read_buffer c =
     let open Error in
