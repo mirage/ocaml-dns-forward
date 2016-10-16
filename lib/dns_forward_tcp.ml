@@ -92,7 +92,7 @@ module Make(Tcp: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME) = struct
       >>= function
       | `Error (`Msg m) ->
         Log.info (fun f -> f "%s: dispatcher shutting down" m);
-        Lwt.return_unit
+        disconnect t
       | `Ok buffer ->
         let buf = Dns.Buf.of_cstruct buffer in
         begin match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 (Cstruct.len buffer)) with
