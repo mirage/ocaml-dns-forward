@@ -20,7 +20,7 @@
   type t
   (** A forwarding DNS proxy *)
 
-  val make: Dns_forward_config.t -> t
+  val make: Dns_forward_config.t -> t Lwt.t
   (** Construct a forwarding DNS proxy given some configuration *)
 
   val answer: t -> Cstruct.t -> [ `Ok of Cstruct.t | `Error of [ `Msg of string ] ] Lwt.t

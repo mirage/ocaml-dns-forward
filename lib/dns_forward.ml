@@ -65,27 +65,30 @@ let or_fail_msg m = m >>= function
 module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
 
   type t = {
-    config: Dns_forward_config.t;
+    connections: (Dns_forward_config.server * Client.t) list;
   }
 
   let make config =
-    { config }
+    Lwt_list.map_s (fun server ->
+      or_fail_msg @@ Client.connect server.Dns_forward_config.address
+      >>= fun client ->
+      Lwt.return (server, client)
+    ) config
+    >>= fun connections ->
+    Lwt.return { connections }
 
   let answer t buffer =
     let len = Cstruct.len buffer in
     let buf = Dns.Buf.of_cstruct buffer in
     match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
     | Some request ->
-      let servers = choose_servers t.config request in
+      let servers = choose_servers (List.map fst t.connections) request in
       (* send the request to all upstream servers *)
       let rpc server =
         let open Dns_forward_config in
+        let _, client = List.find (fun (s, _) -> s = server) t.connections in
         Log.debug (fun f -> f "forwarding to server %s:%d" (Ipaddr.to_string server.address.ip) server.address.port);
-        or_fail_msg @@ Client.connect server.address
-        >>= fun client ->
-        or_fail_msg @@ Lwt.finalize
-          (fun () -> Client.rpc client buffer)
-          (fun _ -> Client.disconnect client)
+        or_fail_msg @@ Client.rpc client buffer
         >>= fun reply ->
         Lwt.return (Some reply) in
 

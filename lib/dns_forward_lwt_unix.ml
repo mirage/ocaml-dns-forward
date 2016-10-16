@@ -26,6 +26,10 @@ module Log = (val Logs.src_log src : Logs.LOG)
 let default_read_buffer_size = 65536
 let max_udp_length = 65507 (* IP datagram (65535) - IP header(20) - UDP header(8) *)
 
+let string_of_sockaddr = function
+  | Lwt_unix.ADDR_INET(ip, port) -> Unix.string_of_inet_addr ip ^ ":" ^ (string_of_int port)
+  | Lwt_unix.ADDR_UNIX path -> path
+
 module Common = struct
   (** Both UDP and TCP *)
 
@@ -44,6 +48,11 @@ module Common = struct
 
   let sockaddr_of_address (dst, dst_port) =
     Unix.ADDR_INET(Unix.inet_addr_of_string @@ Ipaddr.to_string dst, dst_port)
+
+  let address_of_sockaddr = function
+    | Lwt_unix .ADDR_INET(ip, port) ->
+        ( try Some (Ipaddr.of_string_exn @@ Unix.string_of_inet_addr ip, port) with _ -> None )
+    | _ -> None
 
   let string_of_address (dst, dst_port) =
     Ipaddr.to_string dst ^ ":" ^ (string_of_int dst_port)
@@ -67,25 +76,32 @@ module Tcp = struct
     mutable fd: Lwt_unix.file_descr option;
     read_buffer_size: int;
     mutable read_buffer: Cstruct.t;
+    address: address;
   }
 
-  let of_fd ~read_buffer_size fd =
+  let of_fd ~read_buffer_size address fd =
     let read_buffer = Cstruct.create read_buffer_size in
-    { fd = Some fd; read_buffer_size; read_buffer }
+    { fd = Some fd; read_buffer_size; read_buffer; address }
+
+  let string_of_flow flow =
+    Printf.sprintf "tcp -> %s" (string_of_address flow.address)
 
   let connect ?(read_buffer_size=default_read_buffer_size) address =
+    let description = Printf.sprintf "tcp -> %s" (string_of_address address) in
+    Log.debug (fun f -> f "%s: connect" description);
+
     let sockaddr = sockaddr_of_address address in
     let fd = Lwt_unix.socket Lwt_unix.PF_INET Lwt_unix.SOCK_STREAM 0 in
     Lwt.catch
       (fun () ->
          Lwt_unix.connect fd sockaddr
          >>= fun () ->
-         Lwt.return (`Ok (of_fd ~read_buffer_size fd))
+         Lwt.return (`Ok (of_fd ~read_buffer_size address fd))
       )
       (fun e ->
          Lwt_unix.close fd
          >>= fun () ->
-         errorf "Lwt_unix.connect: caught %s" (Printexc.to_string e)
+         errorf "%s: Lwt_unix.connect: caught %s" description (Printexc.to_string e)
       )
 
   let read t = match t.fd with
@@ -102,7 +118,10 @@ module Tcp = struct
              t.read_buffer <- Cstruct.shift t.read_buffer n;
              Lwt.return (`Ok results)
         ) (fun e ->
-            Log.err (fun f -> f "Socket.TCPV4.read: caught %s returning Eof" (Printexc.to_string e));
+            Log.err (fun f -> f "%s: read caught %s returning Eof"
+              (string_of_flow t)
+              (Printexc.to_string e)
+            );
             Lwt.return `Eof
           )
 
@@ -114,7 +133,13 @@ module Tcp = struct
            Lwt_cstruct.(complete (write fd) buf)
            >>= fun () ->
            Lwt.return (`Ok ())
-        ) (fun _e ->
+        ) (function
+           | Unix.Unix_error(Unix.ECONNRESET, _, _) -> Lwt.return `Eof
+           | e ->
+            Log.err (fun f -> f "%s: write caught %s returning Eof"
+              (string_of_flow t)
+              (Printexc.to_string e)
+            );
             Lwt.return `Eof
           )
 
@@ -138,6 +163,7 @@ module Tcp = struct
     | None -> Lwt.return_unit
     | Some fd ->
       t.fd <- None;
+      Log.debug (fun f -> f "%s: Tcp.close" (string_of_flow t));
       Lwt_unix.close fd
 
   let shutdown_read t = match t.fd with
@@ -149,7 +175,11 @@ module Tcp = struct
            Lwt.return_unit
         ) (function
           | Unix.Unix_error(Unix.ENOTCONN, _, _) -> Lwt.return_unit
-          | _e ->
+          | e ->
+            Log.err (fun f -> f "%s: Lwt_unix.shutdown receive caught %s"
+              (string_of_flow t)
+              (Printexc.to_string e)
+            );
             Lwt.return_unit
           )
 
@@ -162,14 +192,22 @@ module Tcp = struct
            Lwt.return_unit
         ) (function
           | Unix.Unix_error(Unix.ENOTCONN, _, _) -> Lwt.return_unit
-          | _e ->
+          | e ->
+            Log.err (fun f -> f "%s: Lwt_unix.shutdown send caught %s"
+              (string_of_flow t)
+              (Printexc.to_string e)
+            );
             Lwt.return_unit
           )
 
   type server = {
     mutable server_fd: Lwt_unix.file_descr option;
     read_buffer_size: int;
+    address: address;
   }
+
+  let string_of_server t =
+    Printf.sprintf "listen:tcp <- %s" (string_of_address t.address)
 
   let bind address =
     let fd = Lwt_unix.socket Lwt_unix.PF_INET Lwt_unix.SOCK_STREAM 0 in
@@ -177,11 +215,13 @@ module Tcp = struct
       (fun () ->
         Lwt_unix.setsockopt fd Lwt_unix.SO_REUSEADDR true;
         Lwt_unix.bind fd (sockaddr_of_address address);
-        Lwt.return (`Ok { server_fd = Some fd; read_buffer_size = default_read_buffer_size })
+        Lwt.return (`Ok { server_fd = Some fd; read_buffer_size = default_read_buffer_size; address })
       ) (fun e ->
         Lwt_unix.close fd
         >>= fun () ->
-        errorf "Tcp.bind failed to bind to %s: %s" (string_of_address address) (Printexc.to_string e)
+        errorf "listen:tcp <- %s caught %s"
+          (string_of_address address)
+          (Printexc.to_string e)
       )
 
   let getsockname server = getsockname "Tcp.getsockname" server.server_fd
@@ -190,19 +230,26 @@ module Tcp = struct
     | None -> Lwt.return_unit
     | Some fd ->
       server.server_fd <- None;
+      Log.debug (fun f -> f "%s: close server socket" (string_of_server server));
       Lwt_unix.close fd
 
   let listen (server: server) cb =
     let rec loop fd =
       Lwt_unix.accept fd
-      >>= fun (client, _sockaddr) ->
+      >>= fun (client, sockaddr) ->
       let read_buffer_size = server.read_buffer_size in
 
       Lwt.async
        (fun () ->
          Lwt.catch
            (fun () ->
-             Lwt.return (Some (of_fd ~read_buffer_size client))
+             ( match address_of_sockaddr sockaddr with
+               | Some address ->
+                 Lwt.return address
+               | _ ->
+                 Lwt.fail (Failure "unknown incoming socket address")
+             ) >>= fun address ->
+             Lwt.return (Some (of_fd ~read_buffer_size address client))
            ) (fun _e ->
              Lwt_unix.close client
              >>= fun () ->
@@ -216,7 +263,11 @@ module Tcp = struct
               Lwt.catch
                 (fun () -> cb flow)
                 (fun e ->
-                  Log.info (fun f -> f "caught %s so closing flow" (Printexc.to_string e));
+                  Log.info (fun f -> f "tcp:%s <- %s: caught %s so closing flow"
+                    (string_of_server server)
+                    (string_of_sockaddr sockaddr)
+                    (Printexc.to_string e)
+                  );
                   Lwt.return_unit)
             ) (fun () -> close flow)
       );
@@ -236,7 +287,10 @@ module Tcp = struct
                     shutdown server
                   )
               ) (fun e ->
-                Log.info (fun f -> f "caught %s so shutting down server" (Printexc.to_string e));
+                Log.info (fun f -> f "%s: caught %s so shutting down server"
+                  (string_of_server server)
+                  (Printexc.to_string e)
+                );
                 Lwt.return_unit
               )
           )
@@ -250,15 +304,22 @@ module Udp = struct
     read_buffer_size: int;
     mutable already_read: Cstruct.t option;
     sockaddr: Unix.sockaddr;
+    address: address;
   }
 
-  let connect ?(read_buffer_size = max_udp_length) address =
+  let string_of_flow t = Printf.sprintf "udp -> %s" (string_of_address t.address)
+
+  let of_fd ?(read_buffer_size = max_udp_length) ?(already_read = None) sockaddr address fd =
+    { fd = Some fd; read_buffer_size; already_read; sockaddr; address }
+
+  let connect ?read_buffer_size address =
+    Log.debug (fun f -> f "udp -> %s: connect" (string_of_address address));
+
     let fd = Lwt_unix.socket Lwt_unix.PF_INET Lwt_unix.SOCK_DGRAM 0 in
     (* Win32 requires all sockets to be bound however macOS and Linux don't *)
     (try Lwt_unix.bind fd (Lwt_unix.ADDR_INET(Unix.inet_addr_any, 0)) with _ -> ());
-    let already_read = None in
     let sockaddr = sockaddr_of_address address in
-    Lwt.return (`Ok { fd = Some fd; read_buffer_size; already_read; sockaddr })
+    Lwt.return (`Ok (of_fd ?read_buffer_size sockaddr address fd))
 
   let read t = match t.fd, t.already_read with
     | None, _ -> Lwt.return `Eof
@@ -279,7 +340,10 @@ module Udp = struct
           let response = Cstruct.sub buffer 0 n in
           Lwt.return (`Ok response)
         ) (fun e ->
-          Log.err (fun f -> f "Udp.read: caught %s returning Eof" (Printexc.to_string e));
+          Log.err (fun f -> f "%s: recvfrom caught %s returning Eof"
+            (string_of_flow t)
+            (Printexc.to_string e)
+          );
           Lwt.return `Eof
         )
 
@@ -295,7 +359,10 @@ module Udp = struct
           >>= fun _n ->
           Lwt.return (`Ok ())
         ) (fun e ->
-          Log.err (fun f -> f "Udp.write: caught %s returning Eof" (Printexc.to_string e));
+          Log.err (fun f -> f "%s: sendto caught %s returning Eof"
+            (string_of_flow t)
+            (Printexc.to_string e)
+          );
           Lwt.return `Eof
         )
 
@@ -305,6 +372,7 @@ module Udp = struct
     | None -> Lwt.return_unit
     | Some fd ->
       t.fd <- None;
+      Log.debug (fun f -> f "%s: close" (string_of_flow t));
       Lwt_unix.close fd
 
   let shutdown_read _t = Lwt.return_unit
@@ -312,7 +380,11 @@ module Udp = struct
 
   type server = {
     mutable server_fd: Lwt_unix.file_descr option;
+    address: address;
   }
+
+  let string_of_server t =
+    Printf.sprintf "listen udp:%s" (string_of_address t.address)
 
   let getsockname server = getsockname "Udp.getsockname" server.server_fd
 
@@ -321,15 +393,16 @@ module Udp = struct
     try
       let sockaddr = sockaddr_of_address address in
       Lwt_unix.bind fd sockaddr;
-      Lwt.return (`Ok { server_fd = Some fd })
+      Lwt.return (`Ok { server_fd = Some fd; address })
     with
-    | e -> errorf "Udp.bind failed to bind address %s: %s"
+    | e -> errorf "udp:%s: bind caught %s"
       (string_of_address address) (Printexc.to_string e)
 
   let shutdown t = match t.server_fd with
     | None -> Lwt.return_unit
     | Some fd ->
       t.server_fd <- None;
+      Log.debug (fun f -> f "%s: close" (string_of_server t));
       Lwt_unix.close fd
 
   let listen t flow_cb =
@@ -347,19 +420,29 @@ module Udp = struct
             Cstruct.blit_from_bytes bytes 0 buffer 0 n;
             let data = Cstruct.sub buffer 0 n in
             (* construct a flow with this buffer available for reading *)
-            let flow = { fd = Some fd; read_buffer_size = 0; already_read = Some data; sockaddr } in
+            ( match address_of_sockaddr sockaddr with
+              | Some address -> Lwt.return address
+              | None -> Lwt.fail (Failure "failed to discover incoming socket address")
+            ) >>= fun address ->
+            let flow = of_fd ~read_buffer_size:0 ~already_read:(Some data) sockaddr address fd in
             Lwt.async
               (fun () ->
                 Lwt.catch
                   (fun () -> flow_cb flow)
                   (fun e ->
-                    Log.info (fun f -> f "Udp.listen callback caught: %s" (Printexc.to_string e));
+                    Log.info (fun f -> f "%s: listen callback caught: %s"
+                      (string_of_server t)
+                      (Printexc.to_string e)
+                    );
                     Lwt.return_unit
                   )
               );
             Lwt.return true
           ) (fun e ->
-            Log.err (fun f -> f "Udp.listen: caught %s shutting down server" (Printexc.to_string e));
+            Log.err (fun f -> f "%s: listen caught %s shutting down server"
+              (string_of_server t)
+              (Printexc.to_string e)
+            );
             Lwt.return false
           )
         >>= function

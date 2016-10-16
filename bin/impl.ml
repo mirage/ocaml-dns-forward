@@ -48,7 +48,15 @@ module Tcp_forwarder = Dns_forward.Make(Tcp)(Tcp)(Time)
 
 let max_udp_length = 65507
 
+let set_signal_if_supported signal handler =
+  try
+    Sys.set_signal signal handler
+  with Invalid_argument _ ->
+    ()
+
 let serve port filename =
+  set_signal_if_supported Sys.sigpipe Sys.Signal_ignore;
+
   if filename = "" then begin
     `Error (true, "please supply the name of a config file")
   end else Lwt_main.run begin
@@ -56,8 +64,10 @@ let serve port filename =
     >>= fun lines ->
     let all = String.concat "" lines in
     let config = Dns_forward_config.t_of_sexp @@ Sexplib.Sexp.of_string all in
-    let udp = Udp_forwarder.make config in
-    let tcp = Tcp_forwarder.make config in
+    Udp_forwarder.make config
+    >>= fun udp ->
+    Tcp_forwarder.make config
+    >>= fun tcp ->
     let address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
     let t =
       let open Dns_forward_error.Infix in
