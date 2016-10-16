@@ -140,9 +140,6 @@ module Make(Tcp: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME) = struct
   type response = Cstruct.t
 
   let connect address =
-    Log.debug (fun f -> f "forwarding to server %s:%d"
-      (Ipaddr.to_string address.Dns_forward_config.ip)
-      address.Dns_forward_config.port);
     let c = None in
     let m = Lwt_mutex.create () in
     let disconnect_on_idle = Lwt.return_unit in
@@ -187,7 +184,6 @@ module Make(Tcp: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME) = struct
         get_c t
         >>= fun c ->
         let open Lwt.Infix in
-
         (* An existing connection to the server might have been closed by the server;
            therefore if we fail to write the request, reconnect and try once more. *)
         Lwt_mutex.with_lock t.write_m (fun () -> write_buffer c buffer)

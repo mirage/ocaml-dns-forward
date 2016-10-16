@@ -37,9 +37,6 @@ module Make(Udp: Dns_forward_s.TCPIP) = struct
   module FlowError = Dns_forward_error.FromFlowError(Udp)
 
   let connect address =
-    Log.debug (fun f -> f "forwarding to server %s:%d"
-      (Ipaddr.to_string address.Dns_forward_config.ip)
-      address.Dns_forward_config.port);
     let open Error in
     Udp.connect (address.Dns_forward_config.ip, address.Dns_forward_config.port)
     >>= fun flow ->
