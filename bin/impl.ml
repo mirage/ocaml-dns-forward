@@ -48,7 +48,15 @@ module Tcp_forwarder = Dns_forward.Make(Tcp)(Tcp)(Time)
 
 let max_udp_length = 65507
 
+let set_signal_if_supported signal handler =
+  try
+    Sys.set_signal signal handler
+  with Invalid_argument _ ->
+    ()
+
 let serve port filename =
+  set_signal_if_supported Sys.sigpipe Sys.Signal_ignore;
+
   if filename = "" then begin
     `Error (true, "please supply the name of a config file")
   end else Lwt_main.run begin
