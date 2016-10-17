@@ -14,10 +14,12 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
+let errorf = Dns_forward_error.errorf
 
 type request = Cstruct.t
 type response = Cstruct.t
 type address = Dns_forward_config.address
+let string_of_address a = Ipaddr.to_string a.Dns_forward_config.ip ^ ":" ^ (string_of_int a.Dns_forward_config.port)
 
 type cb = request -> [ `Ok of response | `Error of [ `Msg of string ] ] Lwt.t
 
@@ -49,7 +51,7 @@ let connect address =
     Hashtbl.replace nr_connects address (if Hashtbl.mem nr_connects address then Hashtbl.find nr_connects address else 1);
     let cb = (Hashtbl.find bound address).listen_cb in
     Lwt.return (`Ok { cb; server_address = address })
-  end else Lwt.return (`Error (`Msg "no bound server"))
+  end else errorf "connect: no server bound to %s" (string_of_address address)
 
 let bind address =
   let listen_cb _ = Lwt.return (`Error (`Msg "no callback")) in

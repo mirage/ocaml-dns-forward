@@ -165,8 +165,73 @@ let test_local_lookups () =
     Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   | `Error (`Msg m) -> failwith m
 
+let test_tcp_multiplexing () =
+  Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+  match Lwt_main.run begin
+    let module Proto = Dns_forward_tcp.Make(Flow)(Time) in
+    let module S = Server.Make(Proto) in
+    let foo_public = "8.8.8.8" in
+    (* a public server mapping 'foo' to a public ip *)
+    let public_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
+    let public_address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 6 } in
+    let open Error in
+    S.serve ~address:public_address public_server
+    >>= fun () ->
+    let module F = Dns_forward.Make(Proto)(Proto)(Time) in
+    let config = [
+      { Dns_forward_config.address = public_address; zones = [] };
+    ] in
+    let open Lwt.Infix in
+    F.make config
+    >>= fun f ->
+    let f_address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 7 } in
+    let open Error in
+    F.serve ~address:f_address f
+    >>= fun () ->
+    Proto.connect f_address
+    >>= fun c ->
+    let request = make_a_query (Dns.Name.of_string "foo") in
+    let send_request () =
+      Proto.rpc c request
+      >>= fun response ->
+      parse_response response
+      >>= fun ipv4 ->
+      Alcotest.(check string) "IPv4" foo_public (Ipaddr.V4.to_string ipv4);
+      Lwt.return (`Ok ()) in
+    let rec seq f = function
+      | 0 -> Lwt.return (`Ok ())
+      | n ->
+        f ()
+        >>= fun () ->
+        seq f (n - 1) in
+    let rec par f = function
+      | 0 -> Lwt.return (`Ok ())
+      | n ->
+        let first = f () in
+        let rest = par f (n - 1) in
+        first
+        >>= fun () ->
+        rest in
+    (* Run 5 threads each sending 100 requests *)
+    par (fun () -> seq send_request 100) 5
+    >>= fun () ->
+    let open Lwt.Infix in
+    Proto.disconnect c
+    >>= fun () ->
+    F.shutdown f
+    >>= fun () ->
+    Lwt.return (`Ok ())
+  end with
+  | `Ok () ->
+    Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+  | `Error (`Msg m) -> failwith m
+
 let test_infra_set = [
   "Server responds correctly", `Quick, test_server;
+]
+
+let test_protocol_set = [
+  "TCP multiplexing", `Quick, test_tcp_multiplexing;
 ]
 
 let test_forwarder_set = [
@@ -178,4 +243,5 @@ let () =
   Alcotest.run "dns-forward" [
     "Test infrastructure", test_infra_set;
     "Test forwarding", test_forwarder_set;
+    "Test protocols", test_protocol_set;
   ]
