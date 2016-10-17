@@ -45,9 +45,13 @@ let test_server () =
     parse_response response
     >>= fun ipv4 ->
     Alcotest.(check string) "IPv4" "127.0.0.1" (Ipaddr.V4.to_string ipv4);
+    let open Lwt.Infix in
+    Rpc.disconnect c
+    >>= fun () ->
     Lwt.return (`Ok ())
   end with
-  | `Ok () -> ()
+  | `Ok () ->
+    Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   | `Error (`Msg m) -> failwith m
 
 module Time = struct
@@ -56,6 +60,7 @@ module Time = struct
 end
 
 let test_forwarder_zone () =
+  Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   match Lwt_main.run begin
     let module S = Server.Make(Rpc) in
     let foo_public = "8.8.8.8" in
@@ -92,12 +97,19 @@ let test_forwarder_zone () =
     parse_response response
     >>= fun ipv4 ->
     Alcotest.(check string) "IPv4" foo_private (Ipaddr.V4.to_string ipv4);
+    let open Lwt.Infix in
+    Rpc.disconnect c
+    >>= fun () ->
+    F.shutdown f
+    >>= fun () ->
     Lwt.return (`Ok ())
   end with
-  | `Ok () -> ()
+  | `Ok () ->
+    Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   | `Error (`Msg m) -> failwith m
 
 let test_local_lookups () =
+  Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   match Lwt_main.run begin
     let module S = Server.Make(Rpc) in
     let foo_public = "8.8.8.8" in
@@ -136,9 +148,15 @@ let test_local_lookups () =
     parse_response response
     >>= fun ipv4 ->
     Alcotest.(check string) "IPv4" foo_private (Ipaddr.V4.to_string ipv4);
+    let open Lwt.Infix in
+    Rpc.disconnect c
+    >>= fun () ->
+    F.shutdown f
+    >>= fun () ->
     Lwt.return (`Ok ())
   end with
-  | `Ok () -> ()
+  | `Ok () ->
+    Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   | `Error (`Msg m) -> failwith m
 
 let test_infra_set = [

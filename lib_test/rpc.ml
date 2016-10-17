@@ -23,11 +23,18 @@ type cb = request -> [ `Ok of response | `Error of [ `Msg of string ] ] Lwt.t
 
 type t = {
   mutable cb: cb;
+  server_address: address;
 }
 
-let rpc { cb } request = cb request
+let rpc { cb; _ } request = cb request
+
+let nr_connects = Hashtbl.create 7
+
+let get_connections () = Hashtbl.fold (fun k v acc -> (k, v) :: acc) nr_connects []
 
 let disconnect t =
+  let nr = Hashtbl.find nr_connects t.server_address - 1 in
+  if nr = 0 then Hashtbl.remove nr_connects t.server_address else Hashtbl.replace nr_connects t.server_address nr;
   t.cb <- (fun _ -> Lwt.return (`Error (`Msg "disconnected")));
   Lwt.return_unit
 
@@ -39,8 +46,9 @@ let bound = Hashtbl.create 7
 
 let connect address =
   if Hashtbl.mem bound address then begin
+    Hashtbl.replace nr_connects address (if Hashtbl.mem nr_connects address then Hashtbl.find nr_connects address else 1);
     let cb = (Hashtbl.find bound address).listen_cb in
-    Lwt.return (`Ok { cb })
+    Lwt.return (`Ok { cb; server_address = address })
   end else Lwt.return (`Error (`Msg "no bound server"))
 
 let bind address =

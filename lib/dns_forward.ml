@@ -66,6 +66,7 @@ module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(
 
   type t = {
     connections: (Dns_forward_config.server * Client.t) list;
+    mutable server: Server.server option;
   }
 
   let make config =
@@ -75,7 +76,7 @@ module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(
       Lwt.return (server, client)
     ) config
     >>= fun connections ->
-    Lwt.return { connections }
+    Lwt.return { connections; server = None }
 
   let answer ?local_names_cb buffer t =
     let len = Cstruct.len buffer in
@@ -130,7 +131,15 @@ module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(
     let open Dns_forward_error.Infix in
     Server.bind address
     >>= fun server ->
+    t.server <- Some server;
     Server.listen server (fun buf -> answer ?local_names_cb buf t)
     >>= fun () ->
     Lwt.return (`Ok ())
+
+  let shutdown { connections; server } =
+    Lwt_list.iter_s (fun (_, c) -> Client.disconnect c) connections
+    >>= fun () ->
+    match server with
+    | None -> Lwt.return_unit
+    | Some server -> Server.shutdown server
 end
