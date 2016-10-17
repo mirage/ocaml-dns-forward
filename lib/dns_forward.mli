@@ -23,9 +23,15 @@
   val make: Dns_forward_config.t -> t Lwt.t
   (** Construct a forwarding DNS proxy given some configuration *)
 
-  val answer: t -> Cstruct.t -> [ `Ok of Cstruct.t | `Error of [ `Msg of string ] ] Lwt.t
+  val answer:
+    ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
+    Cstruct.t ->
+    t -> [ `Ok of Cstruct.t | `Error of [ `Msg of string ] ] Lwt.t
   (** Given a DNS request, construct an response *)
 
-  val serve: t -> Dns_forward_config.address -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
-  (** Serve requests on the given IP and port forever *)
+  val serve:
+    address:Dns_forward_config.address ->
+    ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
+    t -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
+  (** Serve requests on the given [address] forever *)
  end
