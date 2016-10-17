@@ -35,7 +35,7 @@ let test_server () =
     let open Error in
     (* The virtual address we run our server on: *)
     let address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 53 } in
-    S.serve s address
+    S.serve ~address s
     >>= fun () ->
     Rpc.connect address
     >>= fun c ->
@@ -64,12 +64,12 @@ let test_forwarder_zone () =
     let foo_server = S.make [ "foo", Ipaddr.of_string_exn foo_private ] in
     let foo_address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 1 } in
     let open Error in
-    S.serve foo_server foo_address
+    S.serve ~address:foo_address foo_server
     >>= fun () ->
     (* a public server mapping 'foo' to a public ip *)
     let bar_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
     let bar_address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 2 } in
-    S.serve bar_server bar_address
+    S.serve ~address:bar_address bar_server
     >>= fun () ->
     (* a forwarder which uses both servers *)
     let module F = Dns_forward.Make(Rpc)(Rpc)(Time) in
@@ -82,7 +82,7 @@ let test_forwarder_zone () =
     >>= fun f ->
     let f_address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 3 } in
     let open Error in
-    F.serve f f_address
+    F.serve ~address:f_address f
     >>= fun () ->
     Rpc.connect f_address
     >>= fun c ->

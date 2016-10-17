@@ -23,7 +23,7 @@ module Make(Server: Dns_forward_s.RPC_SERVER) = struct
   }
   let make names = { names }
 
-  let answer t buffer =
+  let answer buffer t =
     let len = Cstruct.len buffer in
     let buf = Dns.Buf.of_cstruct buffer in
     match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
@@ -52,11 +52,11 @@ module Make(Server: Dns_forward_s.RPC_SERVER) = struct
     | None ->
       Lwt.return (`Error (`Msg "failed to parse request"))
 
-  let serve t address =
+  let serve ~address t =
     let open Error in
     Server.bind address
     >>= fun server ->
-    Server.listen server (answer t)
+    Server.listen server (fun buf -> answer buf t)
     >>= fun () ->
     Lwt.return (`Ok ())
 

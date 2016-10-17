@@ -22,6 +22,6 @@ module Make(Server: Dns_forward_s.RPC_SERVER): sig
   val make: (string * Ipaddr.t) list -> t
   (** Construct a server with a fixed set of name mappings *)
 
-  val serve: t -> Dns_forward_config.address -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
+  val serve: address:Dns_forward_config.address -> t -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
   (** Serve requests on the given IP and port forever *)
 end
