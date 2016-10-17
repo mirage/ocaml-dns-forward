@@ -24,4 +24,7 @@ module Make(Server: Dns_forward_s.RPC_SERVER): sig
 
   val serve: address:Dns_forward_config.address -> t -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
   (** Serve requests on the given IP and port forever *)
+
+  val get_nr_queries: t -> int
+  (** Return the number of queries which reached this server *)
 end

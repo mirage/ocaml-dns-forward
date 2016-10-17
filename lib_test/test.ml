@@ -61,19 +61,21 @@ end
 
 let test_forwarder_zone () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+  let module S = Server.Make(Rpc) in
+  let foo_public = "8.8.8.8" in
+  let foo_private = "192.168.1.1" in
+  (* a VPN mapping 'foo' to an internal ip *)
+  let foo_server = S.make [ "foo", Ipaddr.of_string_exn foo_private ] in
+  let foo_address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 1 } in
+  (* a public server mapping 'foo' to a public ip *)
+  let bar_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
+  let bar_address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 2 } in
+
+  let open Error in
   match Lwt_main.run begin
-    let module S = Server.Make(Rpc) in
-    let foo_public = "8.8.8.8" in
-    let foo_private = "192.168.1.1" in
-    (* a VPN mapping 'foo' to an internal ip *)
-    let foo_server = S.make [ "foo", Ipaddr.of_string_exn foo_private ] in
-    let foo_address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 1 } in
-    let open Error in
     S.serve ~address:foo_address foo_server
     >>= fun () ->
-    (* a public server mapping 'foo' to a public ip *)
-    let bar_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
-    let bar_address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 2 } in
+
     S.serve ~address:bar_address bar_server
     >>= fun () ->
     (* a forwarder which uses both servers *)
@@ -105,7 +107,11 @@ let test_forwarder_zone () =
     Lwt.return (`Ok ())
   end with
   | `Ok () ->
+    (* the disconnects and close should have removed all the connections: *)
     Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+    (* The server should have sent the query only to foo and not to bar *)
+    Alcotest.(check int) "foo_server queries" 1 (S.get_nr_queries foo_server);
+    Alcotest.(check int) "bar_server queries" 0 (S.get_nr_queries bar_server);
   | `Error (`Msg m) -> failwith m
 
 let test_local_lookups () =
