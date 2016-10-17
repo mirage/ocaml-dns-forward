@@ -19,11 +19,15 @@ module Error = Dns_forward_error.Infix
 
 module Make(Server: Dns_forward_s.RPC_SERVER) = struct
   type t = {
-    names: (string * Ipaddr.t) list
+    names: (string * Ipaddr.t) list;
+    mutable nr_queries: int;
   }
-  let make names = { names }
+  let make names = { names; nr_queries = 0 }
+
+  let get_nr_queries { nr_queries; _ } = nr_queries
 
   let answer buffer t =
+    t.nr_queries <- t.nr_queries + 1;
     let len = Cstruct.len buffer in
     let buf = Dns.Buf.of_cstruct buffer in
     match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with

@@ -14,20 +14,29 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
+let errorf = Dns_forward_error.errorf
 
 type request = Cstruct.t
 type response = Cstruct.t
 type address = Dns_forward_config.address
+let string_of_address a = Ipaddr.to_string a.Dns_forward_config.ip ^ ":" ^ (string_of_int a.Dns_forward_config.port)
 
 type cb = request -> [ `Ok of response | `Error of [ `Msg of string ] ] Lwt.t
 
 type t = {
   mutable cb: cb;
+  server_address: address;
 }
 
-let rpc { cb } request = cb request
+let rpc { cb; _ } request = cb request
+
+let nr_connects = Hashtbl.create 7
+
+let get_connections () = Hashtbl.fold (fun k v acc -> (k, v) :: acc) nr_connects []
 
 let disconnect t =
+  let nr = Hashtbl.find nr_connects t.server_address - 1 in
+  if nr = 0 then Hashtbl.remove nr_connects t.server_address else Hashtbl.replace nr_connects t.server_address nr;
   t.cb <- (fun _ -> Lwt.return (`Error (`Msg "disconnected")));
   Lwt.return_unit
 
@@ -39,9 +48,10 @@ let bound = Hashtbl.create 7
 
 let connect address =
   if Hashtbl.mem bound address then begin
+    Hashtbl.replace nr_connects address (if Hashtbl.mem nr_connects address then Hashtbl.find nr_connects address else 1);
     let cb = (Hashtbl.find bound address).listen_cb in
-    Lwt.return (`Ok { cb })
-  end else Lwt.return (`Error (`Msg "no bound server"))
+    Lwt.return (`Ok { cb; server_address = address })
+  end else errorf "connect: no server bound to %s" (string_of_address address)
 
 let bind address =
   let listen_cb _ = Lwt.return (`Error (`Msg "no callback")) in

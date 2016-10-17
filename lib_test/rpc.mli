@@ -30,3 +30,6 @@ include Dns_forward_s.RPC_SERVER
   with type request  := request
    and type response := response
    and type address  := address
+
+val get_connections: unit -> (address * int) list
+(** Return a list of [server address, number of clients still connected] *)

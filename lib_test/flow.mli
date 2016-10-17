@@ -15,16 +15,9 @@
  *
  *)
 
-module Make(Server: Dns_forward_s.RPC_SERVER): sig
-  type t
-  (** A DNS server for testing *)
+(** An in-memory FLOW simulation *)
 
-  val make: (string * Ipaddr.t) list -> t
-  (** Construct a server with a fixed set of name mappings *)
+include Dns_forward_s.TCPIP
 
-  val serve: address:Dns_forward_config.address -> t -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
-  (** Serve requests on the given IP and port forever *)
-
-  val get_nr_queries: t -> int
-  (** Return the number of queries which reached this server *)
-end
+val get_connections: unit -> (address * int) list
+(** Return a list of [server address, number of clients still connected] *)
