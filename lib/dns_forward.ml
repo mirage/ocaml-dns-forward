@@ -77,35 +77,60 @@ module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(
     >>= fun connections ->
     Lwt.return { connections }
 
-  let answer buffer t =
+  let answer ?local_names_cb buffer t =
     let len = Cstruct.len buffer in
     let buf = Dns.Buf.of_cstruct buffer in
     match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
     | Some request ->
-      let servers = choose_servers (List.map fst t.connections) request in
-      (* send the request to all upstream servers *)
-      let rpc server =
-        let open Dns_forward_config in
-        let _, client = List.find (fun (s, _) -> s = server) t.connections in
-        Log.debug (fun f -> f "forwarding to server %s:%d" (Ipaddr.to_string server.address.ip) server.address.port);
-        or_fail_msg @@ Client.rpc client buffer
-        >>= fun reply ->
-        Lwt.return (Some reply) in
+      let open Dns.Packet in
+      (* First see if we have a local answer to this question *)
+      let questions = request.questions in
+      begin match questions with
+      | [ question ] ->
+        begin match local_names_cb with
+        | Some cb ->
+          cb question
+        | None ->
+          Lwt.return_none
+        end
+      | _ ->
+        Lwt.return_none
+      end >>= fun local ->
+      begin match local with
+      | Some answers ->
+        let id = request.id in
+        let detail = request.detail in
+        let authorities = [] and additionals = [] in
+        let pkt = { id; detail; questions; answers; authorities; additionals } in
+        let buf = Dns.Buf.create 1024 in
+        let buf = marshal buf pkt in
+        Lwt.return (`Ok (Cstruct.of_bigarray buf))
+      | None ->
+        let servers = choose_servers (List.map fst t.connections) request in
+        (* send the request to all upstream servers *)
+        let rpc server =
+          let open Dns_forward_config in
+          let _, client = List.find (fun (s, _) -> s = server) t.connections in
+          Log.debug (fun f -> f "forwarding to server %s:%d" (Ipaddr.to_string server.address.ip) server.address.port);
+          or_fail_msg @@ Client.rpc client buffer
+          >>= fun reply ->
+          Lwt.return (Some reply) in
 
-      (* Pick the first reply to come back, or timeout *)
-      ( Lwt.pick @@ (Time.sleep 2. >>= fun () -> Lwt.return None) :: (List.map rpc servers)
-        >>= function
-        | None -> Lwt.return (`Error (`Msg "no response within the timeout"))
-        | Some reply -> Lwt.return (`Ok reply)
-      )
+        (* Pick the first reply to come back, or timeout *)
+        ( Lwt.pick @@ (Time.sleep 2. >>= fun () -> Lwt.return None) :: (List.map rpc servers)
+          >>= function
+          | None -> Lwt.return (`Error (`Msg "no response within the timeout"))
+          | Some reply -> Lwt.return (`Ok reply)
+        )
+      end
     | None ->
       Lwt.return (`Error (`Msg "failed to parse request"))
 
-  let serve ~address t =
+  let serve ~address ?local_names_cb t =
     let open Dns_forward_error.Infix in
     Server.bind address
     >>= fun server ->
-    Server.listen server (fun buf -> answer buf t)
+    Server.listen server (fun buf -> answer ?local_names_cb buf t)
     >>= fun () ->
     Lwt.return (`Ok ())
 end

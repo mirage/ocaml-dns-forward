@@ -97,12 +97,57 @@ let test_forwarder_zone () =
   | `Ok () -> ()
   | `Error (`Msg m) -> failwith m
 
+let test_local_lookups () =
+  match Lwt_main.run begin
+    let module S = Server.Make(Rpc) in
+    let foo_public = "8.8.8.8" in
+    let foo_private = "192.168.1.1" in
+    (* a public server mapping 'foo' to a public ip *)
+    let public_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
+    let public_address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 4 } in
+    let open Error in
+    S.serve ~address:public_address public_server
+    >>= fun () ->
+    let module F = Dns_forward.Make(Rpc)(Rpc)(Time) in
+    let config = [
+      { Dns_forward_config.address = public_address; zones = [] };
+    ] in
+    let open Lwt.Infix in
+    F.make config
+    >>= fun f ->
+    let f_address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 5 } in
+    let local_names_cb question =
+      let open Dns.Packet in
+      match question with
+      | { q_name; q_type = Q_A; _ } ->
+        let rdata = A (Ipaddr.V4.of_string_exn foo_private) in
+        let name = q_name and cls = RR_IN and flush = false and ttl = 100l in
+        Lwt.return (Some [ { name; cls; flush; ttl; rdata } ])
+      | _ ->
+        Lwt.return None in
+    let open Error in
+    F.serve ~address:f_address ~local_names_cb f
+    >>= fun () ->
+    Rpc.connect f_address
+    >>= fun c ->
+    let request = make_a_query (Dns.Name.of_string "foo") in
+    Rpc.rpc c request
+    >>= fun response ->
+    parse_response response
+    >>= fun ipv4 ->
+    Alcotest.(check string) "IPv4" foo_private (Ipaddr.V4.to_string ipv4);
+    Lwt.return (`Ok ())
+  end with
+  | `Ok () -> ()
+  | `Error (`Msg m) -> failwith m
+
 let test_infra_set = [
   "Server responds correctly", `Quick, test_server;
 ]
 
 let test_forwarder_set = [
   "Zone config respected", `Quick, test_forwarder_zone;
+  "Local names resolve ok", `Quick, test_local_lookups;
 ]
 
 let () =
