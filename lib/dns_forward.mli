@@ -39,6 +39,7 @@ module Make_server(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_C
   val serve:
     address:Dns_forward_config.address ->
     ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
+    ?timeout:float ->
     t -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
   (** Serve requests on the given [address] forever *)
 

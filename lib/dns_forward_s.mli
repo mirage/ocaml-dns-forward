@@ -86,6 +86,7 @@ module type RESOLVER = sig
   type t
   val answer:
     ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
+    ?timeout:float ->
     Cstruct.t ->
     t -> [ `Ok of Cstruct.t | `Error of [ `Msg of string ] ] Lwt.t
 end

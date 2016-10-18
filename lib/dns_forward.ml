@@ -80,7 +80,7 @@ module Make_resolver(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = stru
   let destroy t =
     Lwt_list.iter_s (fun (_, c) -> Client.disconnect c) t.connections
 
-  let answer ?local_names_cb buffer t =
+  let answer ?local_names_cb ?(timeout=2.0) buffer t =
     let len = Cstruct.len buffer in
     let buf = Dns.Buf.of_cstruct buffer in
     match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
@@ -120,7 +120,7 @@ module Make_resolver(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = stru
           Lwt.return (Some reply) in
 
         (* Pick the first reply to come back, or timeout *)
-        ( Lwt.pick @@ (Time.sleep 2. >>= fun () -> Lwt.return None) :: (List.map rpc servers)
+        ( Lwt.pick @@ (Time.sleep timeout >>= fun () -> Lwt.return None) :: (List.map rpc servers)
           >>= function
           | None -> Lwt.return (`Error (`Msg "no response within the timeout"))
           | Some reply -> Lwt.return (`Ok reply)
@@ -144,12 +144,12 @@ module Make_server(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_C
     >>= fun resolver ->
     Lwt.return { resolver; server = None }
 
-  let serve ~address ?local_names_cb t =
+  let serve ~address ?local_names_cb ?timeout t =
     let open Dns_forward_error.Infix in
     Server.bind address
     >>= fun server ->
     t.server <- Some server;
-    Server.listen server (fun buf -> Resolver.answer ?local_names_cb buf t.resolver)
+    Server.listen server (fun buf -> Resolver.answer ?local_names_cb ?timeout buf t.resolver)
     >>= fun () ->
     Lwt.return (`Ok ())
 
