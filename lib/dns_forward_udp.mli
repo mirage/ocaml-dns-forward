@@ -19,22 +19,5 @@
 
 module ReaderWriter(Flow: V1_LWT.FLOW): sig
   include Dns_forward_s.READERWRITER
-
-  val connect: Flow.flow -> t
-end
-
-module Make(Udp: Dns_forward_s.SOCKETS): sig
-  type request = Cstruct.t
-  type response = Cstruct.t
-  type address = Dns_forward_config.address
-
-  include Dns_forward_s.RPC_CLIENT
-    with type request  := request
-     and type response := response
-     and type address  := address
-
-  include Dns_forward_s.RPC_SERVER
-    with type request  := request
-     and type response := response
-     and type address  := address
+    with type flow = Flow.flow
 end

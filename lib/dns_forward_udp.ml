@@ -28,6 +28,7 @@ module ReaderWriter(Flow: V1_LWT.FLOW) = struct
 
   type request = Cstruct.t
   type response = Cstruct.t
+  type flow = Flow.flow
   type t = Flow.flow
 
   let connect flow = flow
@@ -56,72 +57,4 @@ module ReaderWriter(Flow: V1_LWT.FLOW) = struct
       errorf "read: Eof"
     | `Error e ->
       errorf "write: %s" (Flow.error_message e)
-end
-
-module Make(Udp: Dns_forward_s.SOCKETS) = struct
-  type address = Dns_forward_config.address
-
-  module RW = ReaderWriter(Udp)
-
-  type t = {
-    address: address;
-    rw: RW.t;
-  }
-
-  type request = Cstruct.t
-  type response = Cstruct.t
-
-  module Error = Dns_forward_error.Infix
-  module FlowError = Dns_forward_error.FromFlowError(Udp)
-
-  let connect address =
-    let open Error in
-    Udp.connect (address.Dns_forward_config.ip, address.Dns_forward_config.port)
-    >>= fun flow ->
-    let rw = RW.connect flow in
-    Lwt.return (`Ok { address; rw })
-
-  let disconnect { rw; _ } =
-    RW.close rw
-
-  let rpc (t: t) request =
-    let open Error in
-    RW.write t.rw request
-    >>= fun () ->
-    RW.read t.rw
-    >>= fun reply ->
-    Lwt.return (`Ok reply)
-
-  type server = {
-    address: address;
-    server: Udp.server;
-  }
-
-  let bind address =
-    let open Error in
-    Udp.bind (address.Dns_forward_config.ip, address.Dns_forward_config.port)
-    >>= fun server ->
-    Lwt.return (`Ok { address; server })
-
-  let listen { server; _ } cb =
-    let open Lwt.Infix in
-    Udp.listen server (fun flow ->
-      let rw = RW.connect flow in
-      ( RW.read rw
-        >>= function
-        | `Error _ -> Lwt.return_unit
-        | `Ok request ->
-          ( cb request
-            >>= function
-            | `Error _ -> Lwt.return_unit
-            | `Ok response ->
-              ( RW.write rw response
-                >>= function
-                | `Error _ -> Lwt.return_unit
-                | `Ok () -> Lwt.return_unit ) ) )
-      );
-    Lwt.return (`Ok ())
-
-  let shutdown server =
-    Udp.shutdown server.server
 end
