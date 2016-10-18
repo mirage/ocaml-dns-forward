@@ -1,39 +1,19 @@
-description = "A Git-like database with a filesystem interface"
+description = "A DNS forwarding library"
 version = "%%VERSION%%"
-requires = "lwt logs fmt astring rresult cstruct"
+requires = "lwt logs fmt astring rresult cstruct mirage-flow channel mtime sexplib ipaddr dns"
+archive(byte) = "dns-forward.cma"
+archive(native) = "dns-forward.cmxa"
+plugin(byte) = "dns-forward.cma"
+plugin(native) = "dns-forward.cmxs"
+exists_if = "dns-forward.cma"
 
-package "vfs" (
- directory = "vfs"
- description = "Datakit's VFS description"
+package "lwt-unix" (
+ description = "Lwt_unix I/O library"
  version = "%%VERSION%%"
- requires = ""
- archive(byte) = "vfs.cma"
- archive(native) = "vfs.cmxa"
- plugin(byte) = "vfs.cma"
- plugin(native) = "vfs.cmxs"
- exists_if = "vfs.cma"
-)
-
-package "ivfs" (
- directory = "ivfs"
- description = "Irmin to Datakit's VFS layer"
- version = "%%VERSION%%"
- requires = "irmin datakit.vfs"
- archive(byte) = "ivfs.cma"
- archive(native) = "ivfs.cmxa"
- plugin(byte) = "ivfs.cma"
- plugin(native) = "ivfs.cmxs"
- exists_if = "ivfs.cma"
-)
-
-package "fs9p" (
- directory = "fs9p"
- description = "Datakit's VFS to 9p layer"
- version = "%%VERSION%%"
- requires = "protocol-9p.unix datakit.vfs"
- archive(byte) = "fs9p.cma"
- archive(native) = "fs9p.cmxa"
- plugin(byte) = "fs9p.cma"
- plugin(native) = "fs9p.cmxs"
- exists_if = "fs9p.cma"
+ requires = "lwt.unix lwt logs rresult cstruct cstruct.lwt ipaddr"
+ archive(byte) = "dns-forward-lwt-unix.cma"
+ archive(native) = "dns-forward-lwt-unix.cmxa"
+ plugin(byte) = "dns-forward-lwt-unix.cma"
+ plugin(native) = "dns-forward-lwt-unix.cmxs"
+ exists_if = "dns-forward-lwt-unix.cma"
 )
