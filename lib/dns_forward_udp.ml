@@ -22,12 +22,50 @@ let src =
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
+module ReaderWriter(Flow: V1_LWT.FLOW) = struct
+  module Error = Dns_forward_error.Infix
+  let errorf = Dns_forward_error.errorf
+
+  type request = Cstruct.t
+  type response = Cstruct.t
+  type t = Flow.flow
+
+  let connect flow = flow
+
+  let close t =
+    Flow.close t
+
+  let read t =
+    let open Lwt.Infix in
+    Flow.read t
+    >>= function
+    | `Ok buf ->
+      Lwt.return (`Ok buf)
+    | `Eof ->
+      errorf "read: Eof"
+    | `Error e ->
+      errorf "read: %s" (Flow.error_message e)
+
+  let write t buf =
+    let open Lwt.Infix in
+    Flow.write t buf
+    >>= function
+    | `Ok buf ->
+      Lwt.return (`Ok buf)
+    | `Eof ->
+      errorf "read: Eof"
+    | `Error e ->
+      errorf "write: %s" (Flow.error_message e)
+end
+
 module Make(Udp: Dns_forward_s.SOCKETS) = struct
   type address = Dns_forward_config.address
 
+  module RW = ReaderWriter(Udp)
+
   type t = {
     address: address;
-    flow: Udp.flow;
+    rw: RW.t;
   }
 
   type request = Cstruct.t
@@ -40,16 +78,17 @@ module Make(Udp: Dns_forward_s.SOCKETS) = struct
     let open Error in
     Udp.connect (address.Dns_forward_config.ip, address.Dns_forward_config.port)
     >>= fun flow ->
-    Lwt.return (`Ok { address; flow })
+    let rw = RW.connect flow in
+    Lwt.return (`Ok { address; rw })
 
-  let disconnect { flow; _ } =
-    Udp.close flow
+  let disconnect { rw; _ } =
+    RW.close rw
 
   let rpc (t: t) request =
-    let open FlowError in
-    Udp.write t.flow request
+    let open Error in
+    RW.write t.rw request
     >>= fun () ->
-    Udp.read t.flow
+    RW.read t.rw
     >>= fun reply ->
     Lwt.return (`Ok reply)
 
@@ -67,17 +106,18 @@ module Make(Udp: Dns_forward_s.SOCKETS) = struct
   let listen { server; _ } cb =
     let open Lwt.Infix in
     Udp.listen server (fun flow ->
-      ( Udp.read flow
+      let rw = RW.connect flow in
+      ( RW.read rw
         >>= function
-        | `Error _ | `Eof -> Lwt.return_unit
+        | `Error _ -> Lwt.return_unit
         | `Ok request ->
           ( cb request
             >>= function
             | `Error _ -> Lwt.return_unit
             | `Ok response ->
-              ( Udp.write flow response
+              ( RW.write rw response
                 >>= function
-                | `Error _ | `Eof -> Lwt.return_unit
+                | `Error _ -> Lwt.return_unit
                 | `Ok () -> Lwt.return_unit ) ) )
       );
     Lwt.return (`Ok ())

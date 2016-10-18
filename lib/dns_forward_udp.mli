@@ -17,6 +17,12 @@
 
 (** DNS over UDP uses the UDP datagrams to delineate message boundaries *)
 
+module ReaderWriter(Flow: V1_LWT.FLOW): sig
+  include Dns_forward_s.READERWRITER
+
+  val connect: Flow.flow -> t
+end
+
 module Make(Udp: Dns_forward_s.SOCKETS): sig
   type request = Cstruct.t
   type response = Cstruct.t
