@@ -62,21 +62,23 @@ let or_fail_msg m = m >>= function
   | `Error (`Msg m) -> Lwt.fail (Failure m)
   | `Ok x -> Lwt.return x
 
-module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
+module Make_resolver(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
 
   type t = {
     connections: (Dns_forward_config.server * Client.t) list;
-    mutable server: Server.server option;
   }
 
-  let make config =
+  let create config =
     Lwt_list.map_s (fun server ->
       or_fail_msg @@ Client.connect server.Dns_forward_config.address
       >>= fun client ->
       Lwt.return (server, client)
     ) config
     >>= fun connections ->
-    Lwt.return { connections; server = None }
+    Lwt.return { connections }
+
+  let destroy t =
+    Lwt_list.iter_s (fun (_, c) -> Client.disconnect c) t.connections
 
   let answer ?local_names_cb buffer t =
     let len = Cstruct.len buffer in
@@ -127,17 +129,32 @@ module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(
     | None ->
       Lwt.return (`Error (`Msg "failed to parse request"))
 
+end
+
+module Make_server(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
+  module Resolver = Make_resolver(Client)(Time)
+
+  type t = {
+    resolver: Resolver.t;
+    mutable server: Server.server option;
+  }
+
+  let create config =
+    Resolver.create config
+    >>= fun resolver ->
+    Lwt.return { resolver; server = None }
+
   let serve ~address ?local_names_cb t =
     let open Dns_forward_error.Infix in
     Server.bind address
     >>= fun server ->
     t.server <- Some server;
-    Server.listen server (fun buf -> answer ?local_names_cb buf t)
+    Server.listen server (fun buf -> Resolver.answer ?local_names_cb buf t.resolver)
     >>= fun () ->
     Lwt.return (`Ok ())
 
-  let shutdown { connections; server } =
-    Lwt_list.iter_s (fun (_, c) -> Client.disconnect c) connections
+  let destroy { resolver; server } =
+    Resolver.destroy resolver
     >>= fun () ->
     match server with
     | None -> Lwt.return_unit
