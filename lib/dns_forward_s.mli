@@ -89,3 +89,12 @@ module type RESOLVER = sig
     Cstruct.t ->
     t -> [ `Ok of Cstruct.t | `Error of [ `Msg of string ] ] Lwt.t
 end
+
+module type READERWRITER = sig
+  (** Read and write DNS packets from a flow *)
+  type request = Cstruct.t
+  type response = Cstruct.t
+  type t
+  val read: t -> [ `Ok of request | `Error of [ `Msg of string ] ] Lwt.t
+  val write: t -> response -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
+end
