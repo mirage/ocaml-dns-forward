@@ -96,6 +96,9 @@ module type READERWRITER = sig
   type request = Cstruct.t
   type response = Cstruct.t
   type t
+  type flow
+  val connect: flow -> t
   val read: t -> [ `Ok of request | `Error of [ `Msg of string ] ] Lwt.t
   val write: t -> response -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
+  val close: t -> unit Lwt.t
 end

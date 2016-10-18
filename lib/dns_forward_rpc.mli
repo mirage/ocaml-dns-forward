@@ -15,9 +15,23 @@
  *
  *)
 
-(** DNS over TCP uses a simple header to delineate message boundaries *)
+(** Implement the client and server DNS RPC protocol*)
 
-module ReaderWriter(Flow: V1_LWT.FLOW): sig
-  include Dns_forward_s.READERWRITER
-    with type flow = Flow.flow
+module Make
+  (Sockets: Dns_forward_s.SOCKETS)
+  (Packet: Dns_forward_s.READERWRITER with type flow = Sockets.flow)
+  (Time: V1_LWT.TIME): sig
+  type request = Cstruct.t
+  type response = Cstruct.t
+  type address = Dns_forward_config.address
+
+  include Dns_forward_s.RPC_CLIENT
+    with type request  := request
+     and type response := response
+     and type address  := address
+
+  include Dns_forward_s.RPC_SERVER
+    with type request  := request
+     and type response := response
+     and type address  := address
 end

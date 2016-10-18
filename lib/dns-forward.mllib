@@ -3,3 +3,5 @@ Dns_forward_config
 Dns_forward_udp
 Dns_forward_tcp
 Dns_forward_error
+Dns_forward_free_id
+Dns_forward_rpc

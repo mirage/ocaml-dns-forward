@@ -17,18 +17,7 @@
 
 (** DNS over UDP uses the UDP datagrams to delineate message boundaries *)
 
-module Make(Udp: Dns_forward_s.SOCKETS): sig
-  type request = Cstruct.t
-  type response = Cstruct.t
-  type address = Dns_forward_config.address
-
-  include Dns_forward_s.RPC_CLIENT
-    with type request  := request
-     and type response := response
-     and type address  := address
-
-  include Dns_forward_s.RPC_SERVER
-    with type request  := request
-     and type response := response
-     and type address  := address
+module ReaderWriter(Flow: V1_LWT.FLOW): sig
+  include Dns_forward_s.READERWRITER
+    with type flow = Flow.flow
 end

@@ -22,66 +22,39 @@ let src =
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
-module Make(Udp: Dns_forward_s.SOCKETS) = struct
-  type address = Dns_forward_config.address
-
-  type t = {
-    address: address;
-    flow: Udp.flow;
-  }
+module ReaderWriter(Flow: V1_LWT.FLOW) = struct
+  module Error = Dns_forward_error.Infix
+  let errorf = Dns_forward_error.errorf
 
   type request = Cstruct.t
   type response = Cstruct.t
+  type flow = Flow.flow
+  type t = Flow.flow
 
-  module Error = Dns_forward_error.Infix
-  module FlowError = Dns_forward_error.FromFlowError(Udp)
+  let connect flow = flow
 
-  let connect address =
-    let open Error in
-    Udp.connect (address.Dns_forward_config.ip, address.Dns_forward_config.port)
-    >>= fun flow ->
-    Lwt.return (`Ok { address; flow })
+  let close t =
+    Flow.close t
 
-  let disconnect { flow; _ } =
-    Udp.close flow
-
-  let rpc (t: t) request =
-    let open FlowError in
-    Udp.write t.flow request
-    >>= fun () ->
-    Udp.read t.flow
-    >>= fun reply ->
-    Lwt.return (`Ok reply)
-
-  type server = {
-    address: address;
-    server: Udp.server;
-  }
-
-  let bind address =
-    let open Error in
-    Udp.bind (address.Dns_forward_config.ip, address.Dns_forward_config.port)
-    >>= fun server ->
-    Lwt.return (`Ok { address; server })
-
-  let listen { server; _ } cb =
+  let read t =
     let open Lwt.Infix in
-    Udp.listen server (fun flow ->
-      ( Udp.read flow
-        >>= function
-        | `Error _ | `Eof -> Lwt.return_unit
-        | `Ok request ->
-          ( cb request
-            >>= function
-            | `Error _ -> Lwt.return_unit
-            | `Ok response ->
-              ( Udp.write flow response
-                >>= function
-                | `Error _ | `Eof -> Lwt.return_unit
-                | `Ok () -> Lwt.return_unit ) ) )
-      );
-    Lwt.return (`Ok ())
+    Flow.read t
+    >>= function
+    | `Ok buf ->
+      Lwt.return (`Ok buf)
+    | `Eof ->
+      errorf "read: Eof"
+    | `Error e ->
+      errorf "read: %s" (Flow.error_message e)
 
-  let shutdown server =
-    Udp.shutdown server.server
+  let write t buf =
+    let open Lwt.Infix in
+    Flow.write t buf
+    >>= function
+    | `Ok buf ->
+      Lwt.return (`Ok buf)
+    | `Eof ->
+      errorf "read: Eof"
+    | `Error e ->
+      errorf "write: %s" (Flow.error_message e)
 end

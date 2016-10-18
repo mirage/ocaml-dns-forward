@@ -168,7 +168,7 @@ let test_local_lookups () =
 let test_tcp_multiplexing () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   match Lwt_main.run begin
-    let module Proto = Dns_forward_tcp.Make(Flow)(Time) in
+    let module Proto = Dns_forward_rpc.Make(Flow)(Dns_forward_tcp.ReaderWriter(Flow))(Time) in
     let module S = Server.Make(Proto) in
     let foo_public = "8.8.8.8" in
     (* a public server mapping 'foo' to a public ip *)

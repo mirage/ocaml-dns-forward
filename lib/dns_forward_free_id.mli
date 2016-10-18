@@ -15,9 +15,15 @@
  *
  *)
 
-(** DNS over TCP uses a simple header to delineate message boundaries *)
+type t
+(** A finite set of free integer ids *)
 
-module ReaderWriter(Flow: V1_LWT.FLOW): sig
-  include Dns_forward_s.READERWRITER
-    with type flow = Flow.flow
-end
+val make: ?max_id:int -> unit -> t
+(** Construct a free set with the given maximum *)
+
+val get: t -> int Lwt.t
+(** Get a free id. This will block until there is an element available.
+    Caller must guarantee to call [put] on this id or else there will be a leak *)
+
+val put: t -> int -> unit
+(** Put the result of [get] back in the free set *)
