@@ -48,7 +48,7 @@ module type FLOW_SERVER = sig
   (** Stop accepting connections on the given server *)
 end
 
-module type TCPIP = sig
+module type SOCKETS = sig
   type address = Ipaddr.t * int
 
   type flow

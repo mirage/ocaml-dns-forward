@@ -17,7 +17,7 @@
 
 (** An in-memory FLOW simulation *)
 
-include Dns_forward_s.TCPIP
+include Dns_forward_s.SOCKETS
 
 val get_connections: unit -> (address * int) list
 (** Return a list of [server address, number of clients still connected] *)

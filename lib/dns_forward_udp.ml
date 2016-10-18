@@ -22,7 +22,7 @@ let src =
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
-module Make(Udp: Dns_forward_s.TCPIP) = struct
+module Make(Udp: Dns_forward_s.SOCKETS) = struct
   type address = Dns_forward_config.address
 
   type t = {

@@ -15,5 +15,5 @@
  *
  *)
 
-module Tcp: Dns_forward_s.TCPIP
-module Udp: Dns_forward_s.TCPIP
+module Tcp: Dns_forward_s.SOCKETS
+module Udp: Dns_forward_s.SOCKETS
