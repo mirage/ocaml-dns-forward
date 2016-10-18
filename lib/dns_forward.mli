@@ -17,18 +17,12 @@
 
 
 module Make_resolver(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME): sig
+  (** A simple DNS resolver *)
 
-  type t
-  (** A DNS resolver *)
+  include Dns_forward_s.RESOLVER
 
   val create: Dns_forward_config.t -> t Lwt.t
   (** Construct a resolver given some configuration *)
-
-  val answer:
-    ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
-    Cstruct.t ->
-    t -> [ `Ok of Cstruct.t | `Error of [ `Msg of string ] ] Lwt.t
-    (** Given a DNS request, construct an response *)
 
   val destroy: t -> unit Lwt.t
   (** Destroy and free all resources associated with the resolver *)

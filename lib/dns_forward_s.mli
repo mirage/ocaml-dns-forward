@@ -81,3 +81,11 @@ module type RPC_SERVER = sig
   val listen: server -> (request -> [ `Ok of response | `Error of [ `Msg of string ] ] Lwt.t) -> [`Ok of unit | `Error of [ `Msg of string ]] Lwt.t
   val shutdown: server -> unit Lwt.t
 end
+
+module type RESOLVER = sig
+  type t
+  val answer:
+    ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
+    Cstruct.t ->
+    t -> [ `Ok of Cstruct.t | `Error of [ `Msg of string ] ] Lwt.t
+end
