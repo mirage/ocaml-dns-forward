@@ -17,7 +17,7 @@
 
 (** DNS over UDP uses the UDP datagrams to delineate message boundaries *)
 
-module Make(Udp: Dns_forward_s.TCPIP): sig
+module Make(Udp: Dns_forward_s.SOCKETS): sig
   type request = Cstruct.t
   type response = Cstruct.t
   type address = Dns_forward_config.address

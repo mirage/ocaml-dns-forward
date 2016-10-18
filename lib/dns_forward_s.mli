@@ -48,7 +48,7 @@ module type FLOW_SERVER = sig
   (** Stop accepting connections on the given server *)
 end
 
-module type TCPIP = sig
+module type SOCKETS = sig
   type address = Ipaddr.t * int
 
   type flow
@@ -80,4 +80,22 @@ module type RPC_SERVER = sig
   val bind: address -> [ `Ok of server | `Error of [ `Msg of string ] ] Lwt.t
   val listen: server -> (request -> [ `Ok of response | `Error of [ `Msg of string ] ] Lwt.t) -> [`Ok of unit | `Error of [ `Msg of string ]] Lwt.t
   val shutdown: server -> unit Lwt.t
+end
+
+module type RESOLVER = sig
+  type t
+  val answer:
+    ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
+    ?timeout:float ->
+    Cstruct.t ->
+    t -> [ `Ok of Cstruct.t | `Error of [ `Msg of string ] ] Lwt.t
+end
+
+module type READERWRITER = sig
+  (** Read and write DNS packets from a flow *)
+  type request = Cstruct.t
+  type response = Cstruct.t
+  type t
+  val read: t -> [ `Ok of request | `Error of [ `Msg of string ] ] Lwt.t
+  val write: t -> response -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
 end

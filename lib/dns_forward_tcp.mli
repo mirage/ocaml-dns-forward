@@ -17,7 +17,13 @@
 
 (** DNS over TCP uses a simple header to delineate message boundaries *)
 
-module Make(Tcp: Dns_forward_s.TCPIP)(Time: V1_LWT.TIME): sig
+module ReaderWriter(Flow: V1_LWT.FLOW): sig
+  include Dns_forward_s.READERWRITER
+
+  val connect: Flow.flow -> t
+end
+
+module Make(Tcp: Dns_forward_s.SOCKETS)(Time: V1_LWT.TIME): sig
   type request = Cstruct.t
   type response = Cstruct.t
   type address = Dns_forward_config.address

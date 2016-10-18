@@ -79,13 +79,13 @@ let test_forwarder_zone () =
     S.serve ~address:bar_address bar_server
     >>= fun () ->
     (* a forwarder which uses both servers *)
-    let module F = Dns_forward.Make(Rpc)(Rpc)(Time) in
+    let module F = Dns_forward.Make_server(Rpc)(Rpc)(Time) in
     let config = [
       { Dns_forward_config.address = foo_address; zones = [ [ "foo" ] ] };
       { Dns_forward_config.address = bar_address; zones = [] }
     ] in
     let open Lwt.Infix in
-    F.make config
+    F.create config
     >>= fun f ->
     let f_address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 3 } in
     let open Error in
@@ -102,7 +102,7 @@ let test_forwarder_zone () =
     let open Lwt.Infix in
     Rpc.disconnect c
     >>= fun () ->
-    F.shutdown f
+    F.destroy f
     >>= fun () ->
     Lwt.return (`Ok ())
   end with
@@ -126,12 +126,12 @@ let test_local_lookups () =
     let open Error in
     S.serve ~address:public_address public_server
     >>= fun () ->
-    let module F = Dns_forward.Make(Rpc)(Rpc)(Time) in
+    let module F = Dns_forward.Make_server(Rpc)(Rpc)(Time) in
     let config = [
       { Dns_forward_config.address = public_address; zones = [] };
     ] in
     let open Lwt.Infix in
-    F.make config
+    F.create config
     >>= fun f ->
     let f_address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 5 } in
     let local_names_cb question =
@@ -157,7 +157,7 @@ let test_local_lookups () =
     let open Lwt.Infix in
     Rpc.disconnect c
     >>= fun () ->
-    F.shutdown f
+    F.destroy f
     >>= fun () ->
     Lwt.return (`Ok ())
   end with
@@ -177,12 +177,12 @@ let test_tcp_multiplexing () =
     let open Error in
     S.serve ~address:public_address public_server
     >>= fun () ->
-    let module F = Dns_forward.Make(Proto)(Proto)(Time) in
+    let module F = Dns_forward.Make_server(Proto)(Proto)(Time) in
     let config = [
       { Dns_forward_config.address = public_address; zones = [] };
     ] in
     let open Lwt.Infix in
-    F.make config
+    F.create config
     >>= fun f ->
     let f_address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 7 } in
     let open Error in
@@ -218,7 +218,7 @@ let test_tcp_multiplexing () =
     let open Lwt.Infix in
     Proto.disconnect c
     >>= fun () ->
-    F.shutdown f
+    F.destroy f
     >>= fun () ->
     Lwt.return (`Ok ())
   end with

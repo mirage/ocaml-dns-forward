@@ -41,10 +41,10 @@ module Time = struct
 end
 
 module Udp = Dns_forward_udp.Make(Dns_forward_lwt_unix.Udp)
-module Udp_forwarder = Dns_forward.Make(Udp)(Udp)(Time)
+module Udp_forwarder = Dns_forward.Make_server(Udp)(Udp)(Time)
 
 module Tcp = Dns_forward_tcp.Make(Dns_forward_lwt_unix.Tcp)(Time)
-module Tcp_forwarder = Dns_forward.Make(Tcp)(Tcp)(Time)
+module Tcp_forwarder = Dns_forward.Make_server(Tcp)(Tcp)(Time)
 
 let max_udp_length = 65507
 
@@ -64,9 +64,9 @@ let serve port filename =
     >>= fun lines ->
     let all = String.concat "" lines in
     let config = Dns_forward_config.t_of_sexp @@ Sexplib.Sexp.of_string all in
-    Udp_forwarder.make config
+    Udp_forwarder.create config
     >>= fun udp ->
-    Tcp_forwarder.make config
+    Tcp_forwarder.create config
     >>= fun tcp ->
     let address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
     let t =
