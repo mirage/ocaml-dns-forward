@@ -40,10 +40,10 @@ module Time = struct
   let sleep = Lwt_unix.sleep
 end
 
-module Udp = Dns_forward_rpc.Make(Dns_forward_lwt_unix.Udp)(Dns_forward_udp.ReaderWriter(Dns_forward_lwt_unix.Udp))(Time)
+module Udp = Dns_forward_rpc.Make(Dns_forward_lwt_unix.Udp)(Dns_forward.Framing.Udp(Dns_forward_lwt_unix.Udp))(Time)
 module Udp_forwarder = Dns_forward.Server.Make(Udp)(Udp)(Time)
 
-module Tcp = Dns_forward_rpc.Make(Dns_forward_lwt_unix.Tcp)(Dns_forward_tcp.ReaderWriter(Dns_forward_lwt_unix.Tcp))(Time)
+module Tcp = Dns_forward_rpc.Make(Dns_forward_lwt_unix.Tcp)(Dns_forward.Framing.Tcp(Dns_forward_lwt_unix.Tcp))(Time)
 module Tcp_forwarder = Dns_forward.Server.Make(Tcp)(Tcp)(Time)
 
 let max_udp_length = 65507

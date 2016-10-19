@@ -15,9 +15,12 @@
  *
  *)
 
-(** DNS over TCP uses a simple header to delineate message boundaries *)
+module Tcp(Flow: V1_LWT.FLOW): sig
+  include Dns_forward_s.READERWRITER
+    with type flow = Flow.flow
+end
 
-module ReaderWriter(Flow: V1_LWT.FLOW): sig
+module Udp(Flow: V1_LWT.FLOW): sig
   include Dns_forward_s.READERWRITER
     with type flow = Flow.flow
 end
