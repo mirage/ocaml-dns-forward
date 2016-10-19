@@ -17,6 +17,7 @@
 include Dns_forward_s
 
 module Flow = Dns_forward_flow
+module Rpc = Dns_forward_rpc
 module Framing = Dns_forward_framing
 module Server = Dns_forward_server
 module Resolver = Dns_forward_resolver

@@ -22,6 +22,9 @@ let src =
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
+module type Client = Dns_forward_s.RPC_CLIENT
+module type Server = Dns_forward_s.RPC_SERVER
+
 module Make
   (Sockets: Dns_forward_s.SOCKETS)
   (Packet: Dns_forward_s.READERWRITER with type flow = Sockets.flow)

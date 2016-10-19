@@ -61,8 +61,12 @@ module Framing: sig
   module type S = sig
     (** Read and write framed DNS packets *)
 
-    type request = Cstruct.t (** A DNS request *)
-    type response = Cstruct.t (** A DNS response *)
+    type request = Cstruct.t
+    (** A DNS request *)
+
+    type response = Cstruct.t
+    (** A DNS response *)
+
     type t
     (** A connection which can read and write complete DNS messages *)
 
@@ -89,25 +93,61 @@ module Framing: sig
   (** Use UDP framing *)
 end
 
-module type RPC_CLIENT = sig
-  type request = Cstruct.t
-  type response = Cstruct.t
-  type address = Dns_forward_config.address
-  type t
-  val connect: address -> [ `Ok of t | `Error of [ `Msg of string ] ] Lwt.t
-  val rpc: t -> request -> [ `Ok of response | `Error of [ `Msg of string ] ] Lwt.t
-  val disconnect: t -> unit Lwt.t
-end
+module Rpc: sig
+  (** A Remote Procedure Call client and server implementation *)
 
-module type RPC_SERVER = sig
-  type request = Cstruct.t
-  type response = Cstruct.t
-  type address = Dns_forward_config.address
+  module type Client = sig
+    type t
+    (** A Remote Procedure Call client which can send requests to a server
+        and receive responses. *)
 
-  type server
-  val bind: address -> [ `Ok of server | `Error of [ `Msg of string ] ] Lwt.t
-  val listen: server -> (request -> [ `Ok of response | `Error of [ `Msg of string ] ] Lwt.t) -> [`Ok of unit | `Error of [ `Msg of string ]] Lwt.t
-  val shutdown: server -> unit Lwt.t
+    type request = Cstruct.t
+    (** A complete request *)
+
+    type response = Cstruct.t
+    (** A complete response *)
+
+    type address = Dns_forward_config.address
+    (** The address of the remote endpoint *)
+
+    val connect: address -> [ `Ok of t | `Error of [ `Msg of string ] ] Lwt.t
+    (** Connect to the remote server *)
+
+    val rpc: t -> request -> [ `Ok of response | `Error of [ `Msg of string ] ] Lwt.t
+    (** Send a request and await a response. Multiple threads may call this
+        in parallel and it is the implementation's job to associate the right
+        response with the original request. *)
+
+    val disconnect: t -> unit Lwt.t
+    (** Disconnect from the server and free all resources. *)
+  end
+
+  module type Server = sig
+    type server
+    (** A Remote Procedure Call server which will listen on an address, accept
+        incoming connections and answer them *)
+
+    type request = Cstruct.t
+    (** A complete request *)
+
+    type response = Cstruct.t
+    (** A complete response *)
+
+    type address = Dns_forward_config.address
+    (** The address of the server *)
+
+    val bind: address -> [ `Ok of server | `Error of [ `Msg of string ] ] Lwt.t
+    (** Bind to the given address. This will fail if the address does not exist
+        or if another server is already bound there. *)
+
+    val listen: server -> (request -> [ `Ok of response | `Error of [ `Msg of string ] ] Lwt.t) -> [`Ok of unit | `Error of [ `Msg of string ]] Lwt.t
+    (** Listen and accept incoming connections, use the provided callback to
+        answer requests. *)
+
+    val shutdown: server -> unit Lwt.t
+    (** Shutdown the server and free any allocated resources. *)
+  end
+
 end
 
 module Resolver: sig
@@ -134,7 +174,7 @@ module Resolver: sig
         via the [timeout] optional argument. *)
   end
 
-  module Make(Client: RPC_CLIENT)(Time: V1_LWT.TIME): S
+  module Make(Client: Rpc.Client)(Time: V1_LWT.TIME): S
   (** Construct a DNS resolver which will use the given [Client] Implementation
       to contact upstream servers, and the given [Time] implementation to handle
       timeouts. *)
@@ -162,6 +202,6 @@ module Server: sig
     (** Shutdown the server and release allocated resources *)
   end
 
-  module Make(Server: RPC_SERVER)(Client: RPC_CLIENT)(Time: V1_LWT.TIME): S
+  module Make(Server: Rpc.Server)(Client: Rpc.Client)(Time: V1_LWT.TIME): S
 
 end
