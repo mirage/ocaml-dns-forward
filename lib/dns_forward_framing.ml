@@ -22,6 +22,8 @@ let src =
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
+module type S = Dns_forward_s.READERWRITER
+
 module Tcp(Flow: V1_LWT.FLOW) = struct
   module Error = Dns_forward_error.Infix
   let errorf = Dns_forward_error.errorf

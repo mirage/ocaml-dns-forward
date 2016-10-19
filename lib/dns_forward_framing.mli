@@ -15,6 +15,8 @@
  *
  *)
 
+module type S = Dns_forward_s.READERWRITER
+
 module Tcp(Flow: V1_LWT.FLOW): sig
   include Dns_forward_s.READERWRITER
     with type flow = Flow.flow

@@ -15,26 +15,39 @@
  *
  *)
 
-module type READERWRITER = sig
-  (** Read and write DNS packets from a flow *)
-  type request = Cstruct.t
-  type response = Cstruct.t
-  type t
-  type flow
-  val connect: flow -> t
-  val read: t -> [ `Ok of request | `Error of [ `Msg of string ] ] Lwt.t
-  val write: t -> response -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
-  val close: t -> unit Lwt.t
-end
 
 module Framing: sig
   (** DNS messages are framed when sent over other protocols. These modules
       convert byte-stream flows into streams of framed messages. *)
 
-  module Tcp(Flow: V1_LWT.FLOW): READERWRITER with type flow = Flow.flow
+  module type S = sig
+    (** Read and write framed DNS packets *)
+
+    type request = Cstruct.t (** A DNS request *)
+    type response = Cstruct.t (** A DNS response *)
+    type t
+    (** A connection which can read and write complete DNS messages *)
+
+    type flow
+    (** The flow over which we read and write complete DNS messages *)
+
+    val connect: flow -> t
+    (** Prepare to read and write complete DNS messages over the given flow *)
+
+    val read: t -> [ `Ok of request | `Error of [ `Msg of string ] ] Lwt.t
+    (** Read a complete DNS message *)
+
+    val write: t -> response -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
+    (** Write a complete DNS message *)
+
+    val close: t -> unit Lwt.t
+    (** Free resources and close the underlying flow *)
+  end
+
+  module Tcp(Flow: V1_LWT.FLOW): S with type flow = Flow.flow
   (** Use TCP framing *)
 
-  module Udp(Flow: V1_LWT.FLOW): READERWRITER with type flow = Flow.flow
+  module Udp(Flow: V1_LWT.FLOW): S with type flow = Flow.flow
   (** Use UDP framing *)
 end
 
