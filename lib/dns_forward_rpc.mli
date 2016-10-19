@@ -17,17 +17,22 @@
 
 (** Implement the client and server DNS RPC protocol*)
 
-module type Client = Dns_forward_s.RPC_CLIENT
-module type Server = Dns_forward_s.RPC_SERVER
+module Client: sig
+  module type S = Dns_forward_s.RPC_CLIENT
 
-module Client
-  (Sockets: Dns_forward_s.FLOW_CLIENT with type address = Ipaddr.t * int)
-  (Packet: Dns_forward_s.READERWRITER with type flow = Sockets.flow)
-  (Time: V1_LWT.TIME):
-  Dns_forward_s.RPC_CLIENT
+  module Make
+    (Flow: Dns_forward_s.FLOW_CLIENT with type address = Ipaddr.t * int)
+    (Framing: Dns_forward_s.READERWRITER with type flow = Flow.flow)
+    (Time: V1_LWT.TIME):
+    S
+end
 
-module Server
-  (Sockets: Dns_forward_s.FLOW_SERVER with type address = Ipaddr.t * int)
-  (Packet: Dns_forward_s.READERWRITER with type flow = Sockets.flow)
-  (Time: V1_LWT.TIME):
-  Dns_forward_s.RPC_SERVER
+module Server: sig
+  module type S = Dns_forward_s.RPC_SERVER
+
+  module Make
+    (Flow: Dns_forward_s.FLOW_SERVER with type address = Ipaddr.t * int)
+    (Framing: Dns_forward_s.READERWRITER with type flow = Flow.flow)
+    (Time: V1_LWT.TIME):
+    S
+end

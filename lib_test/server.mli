@@ -15,7 +15,7 @@
  *
  *)
 
-module Make(Server: Dns_forward_s.RPC_SERVER): sig
+module Make(Server: Dns_forward.Rpc.Server.S): sig
   type t
   (** A DNS server for testing *)
 

@@ -17,7 +17,7 @@
 
 module Error = Dns_forward_error.Infix
 
-module Make(Server: Dns_forward_s.RPC_SERVER) = struct
+module Make(Server: Dns_forward.Rpc.Server.S) = struct
   type t = {
     names: (string * Ipaddr.t) list;
     mutable nr_queries: int;

@@ -168,8 +168,9 @@ let test_local_lookups () =
 let test_tcp_multiplexing () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   match Lwt_main.run begin
-    let module Proto = Dns_forward_rpc.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
-    let module S = Server.Make(Proto) in
+    let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
+    let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
+    let module S = Server.Make(Proto_server) in
     let foo_public = "8.8.8.8" in
     (* a public server mapping 'foo' to a public ip *)
     let public_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
@@ -177,7 +178,7 @@ let test_tcp_multiplexing () =
     let open Error in
     S.serve ~address:public_address public_server
     >>= fun () ->
-    let module F = Dns_forward.Server.Make(Proto)(Proto)(Time) in
+    let module F = Dns_forward.Server.Make(Proto_server)(Proto_client)(Time) in
     let config = [
       { Dns_forward_config.address = public_address; zones = [] };
     ] in
@@ -188,11 +189,11 @@ let test_tcp_multiplexing () =
     let open Error in
     F.serve ~address:f_address f
     >>= fun () ->
-    Proto.connect f_address
+    Proto_client.connect f_address
     >>= fun c ->
     let request = make_a_query (Dns.Name.of_string "foo") in
     let send_request () =
-      Proto.rpc c request
+      Proto_client.rpc c request
       >>= fun response ->
       parse_response response
       >>= fun ipv4 ->
@@ -216,7 +217,7 @@ let test_tcp_multiplexing () =
     par (fun () -> seq send_request 100) 5
     >>= fun () ->
     let open Lwt.Infix in
-    Proto.disconnect c
+    Proto_client.disconnect c
     >>= fun () ->
     F.destroy f
     >>= fun () ->
