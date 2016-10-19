@@ -14,10 +14,10 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
+open Dns_forward
+module Error = Error.Lwt.Infix
 
-module Error = Dns_forward.Error.Lwt.Infix
-
-module Make(Server: Dns_forward.Rpc.Server.S) = struct
+module Make(Server: Rpc.Server.S) = struct
   type t = {
     names: (string * Ipaddr.t) list;
     mutable nr_queries: int;

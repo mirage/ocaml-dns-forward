@@ -40,13 +40,15 @@ module Time = struct
   let sleep = Lwt_unix.sleep
 end
 
-module Udp_client = Dns_forward.Rpc.Client.Make(Dns_forward_lwt_unix.Udp)(Dns_forward.Framing.Udp(Dns_forward_lwt_unix.Udp))(Time)
-module Udp_server = Dns_forward.Rpc.Server.Make(Dns_forward_lwt_unix.Udp)(Dns_forward.Framing.Udp(Dns_forward_lwt_unix.Udp))(Time)
-module Udp_forwarder = Dns_forward.Server.Make(Udp_server)(Udp_client)(Time)
+open Dns_forward
 
-module Tcp_client = Dns_forward.Rpc.Client.Make(Dns_forward_lwt_unix.Tcp)(Dns_forward.Framing.Tcp(Dns_forward_lwt_unix.Tcp))(Time)
-module Tcp_server = Dns_forward.Rpc.Server.Make(Dns_forward_lwt_unix.Tcp)(Dns_forward.Framing.Tcp(Dns_forward_lwt_unix.Tcp))(Time)
-module Tcp_forwarder = Dns_forward.Server.Make(Tcp_server)(Tcp_client)(Time)
+module Udp_client = Rpc.Client.Make(Dns_forward_lwt_unix.Udp)(Framing.Udp(Dns_forward_lwt_unix.Udp))(Time)
+module Udp_server = Rpc.Server.Make(Dns_forward_lwt_unix.Udp)(Framing.Udp(Dns_forward_lwt_unix.Udp))(Time)
+module Udp_forwarder = Server.Make(Udp_server)(Udp_client)(Time)
+
+module Tcp_client = Rpc.Client.Make(Dns_forward_lwt_unix.Tcp)(Framing.Tcp(Dns_forward_lwt_unix.Tcp))(Time)
+module Tcp_server = Rpc.Server.Make(Dns_forward_lwt_unix.Tcp)(Framing.Tcp(Dns_forward_lwt_unix.Tcp))(Time)
+module Tcp_forwarder = Server.Make(Tcp_server)(Tcp_client)(Time)
 
 let max_udp_length = 65507
 
@@ -65,14 +67,14 @@ let serve port filename =
     read_lines filename
     >>= fun lines ->
     let all = String.concat "" lines in
-    let config = Dns_forward.Config.t_of_sexp @@ Sexplib.Sexp.of_string all in
+    let config = Config.t_of_sexp @@ Sexplib.Sexp.of_string all in
     Udp_forwarder.create config
     >>= fun udp ->
     Tcp_forwarder.create config
     >>= fun tcp ->
-    let address = { Dns_forward.Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
+    let address = { Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
     let t =
-      let open Dns_forward.Error.Lwt.Infix in
+      let open Error.Lwt.Infix in
       Udp_forwarder.serve ~address udp
       >>= fun () ->
       Tcp_forwarder.serve ~address tcp
