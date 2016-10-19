@@ -5,7 +5,7 @@ Library and tools for creating forwarding DNS servers
 
 There is no API documention or example code yet.
 
-Planned features
+Features
 
 - UDP and TCP DNS forwarding
 - support for sending queries to specific servers based on domain

@@ -20,7 +20,7 @@ let () =
   | "dns-forward" -> Ok [
       Pkg.lib   "pkg/META";
       Pkg.lib   "opam";
-      Pkg.mllib "lib/dns-forward.mllib";
+      Pkg.mllib ~api:["Dns_forward"] "lib/dns-forward.mllib";
       Pkg.mllib "lib/dns-forward-lwt-unix.mllib";
       Pkg.bin   "bin/main" ~dst:"dns-forwarder";
       Pkg.test  "lib_test/test" ~args:(Cmd.v "-q");

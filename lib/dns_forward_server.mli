@@ -15,9 +15,6 @@
  *
  *)
 
-(** DNS over TCP uses a simple header to delineate message boundaries *)
+module type S = Dns_forward_s.SERVER
 
-module ReaderWriter(Flow: V1_LWT.FLOW): sig
-  include Dns_forward_s.READERWRITER
-    with type flow = Flow.flow
-end
+module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME): S

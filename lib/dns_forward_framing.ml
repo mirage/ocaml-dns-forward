@@ -16,14 +16,16 @@
  *)
 
 let src =
-  let src = Logs.Src.create "Dns_forward" ~doc:"DNS over TCP" in
+  let src = Logs.Src.create "Dns_forward" ~doc:"DNS framing" in
   Logs.Src.set_level src (Some Logs.Debug);
   src
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
-module ReaderWriter(Flow: V1_LWT.FLOW) = struct
-  module Error = Dns_forward_error.Infix
+module type S = Dns_forward_s.READERWRITER
+
+module Tcp(Flow: V1_LWT.FLOW) = struct
+  module Error = Dns_forward_error.Lwt.Infix
   let errorf = Dns_forward_error.errorf
 
   module C = Channel.Make(Flow)
@@ -93,4 +95,41 @@ module ReaderWriter(Flow: V1_LWT.FLOW) = struct
             errorf "Failed to write %d bytes: %s" (Cstruct.len buffer) (Printexc.to_string e)
           )
       )
+end
+
+module Udp(Flow: V1_LWT.FLOW) = struct
+  module Error = Dns_forward_error.Lwt.Infix
+  let errorf = Dns_forward_error.errorf
+
+  type request = Cstruct.t
+  type response = Cstruct.t
+  type flow = Flow.flow
+  type t = Flow.flow
+
+  let connect flow = flow
+
+  let close t =
+    Flow.close t
+
+  let read t =
+    let open Lwt.Infix in
+    Flow.read t
+    >>= function
+    | `Ok buf ->
+      Lwt.return (`Ok buf)
+    | `Eof ->
+      errorf "read: Eof"
+    | `Error e ->
+      errorf "read: %s" (Flow.error_message e)
+
+  let write t buf =
+    let open Lwt.Infix in
+    Flow.write t buf
+    >>= function
+    | `Ok buf ->
+      Lwt.return (`Ok buf)
+    | `Eof ->
+      errorf "read: Eof"
+    | `Error e ->
+      errorf "write: %s" (Flow.error_message e)
 end

@@ -449,5 +449,29 @@ module Udp = struct
         | false -> Lwt.return_unit
         | true -> loop () in
       Lwt.async loop
+end
 
+module Time = struct
+  type 'a io = 'a Lwt.t
+  let sleep = Lwt_unix.sleep
+end
+
+module Resolver = struct
+  open Dns_forward
+  module Udp_client = Rpc.Client.Make(Udp)(Framing.Udp(Udp))(Time)
+  module Udp = Resolver.Make(Udp_client)(Time)
+
+  module Tcp_client = Rpc.Client.Make(Tcp)(Framing.Tcp(Tcp))(Time)
+  module Tcp = Resolver.Make(Tcp_client)(Time)
+end
+
+module Server = struct
+  open Dns_forward
+  module Udp_client = Rpc.Client.Make(Udp)(Framing.Udp(Udp))(Time)
+  module Udp_server = Rpc.Server.Make(Udp)(Framing.Udp(Udp))(Time)
+  module Udp = Server.Make(Udp_server)(Udp_client)(Time)
+
+  module Tcp_client = Rpc.Client.Make(Tcp)(Framing.Tcp(Tcp))(Time)
+  module Tcp_server = Rpc.Server.Make(Tcp)(Framing.Tcp(Tcp))(Time)
+  module Tcp = Server.Make(Tcp_server)(Tcp_client)(Time)
 end

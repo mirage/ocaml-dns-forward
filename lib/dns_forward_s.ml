@@ -17,35 +17,19 @@
 
 module type FLOW_CLIENT = sig
   include Mirage_flow_s.SHUTDOWNABLE
-
   type address
-
   val connect: ?read_buffer_size:int -> address
     -> [ `Ok of flow | `Error of [ `Msg of string ] ] Lwt.t
-  (** [connect address] creates a connection to [address] and returns
-      he connected flow. *)
 end
 
 module type FLOW_SERVER = sig
   type server
-  (* A server bound to some address *)
-
   type address
-
   val bind: address -> [ `Ok of server | `Error of [ `Msg of string ]] Lwt.t
-  (** Bind a server to an address *)
-
   val getsockname: server -> address
-  (** Query the address the server is bound to *)
-
   type flow
-
   val listen: server -> (flow -> unit Lwt.t) -> unit
-  (** Accept connections forever, calling the callback with each one.
-      Connections are closed automatically when the callback finishes. *)
-
   val shutdown: server -> unit Lwt.t
-  (** Stop accepting connections on the given server *)
 end
 
 module type SOCKETS = sig
@@ -84,11 +68,24 @@ end
 
 module type RESOLVER = sig
   type t
+  val create: Dns_forward_config.t -> t Lwt.t
+  val destroy: t -> unit Lwt.t
   val answer:
     ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
     ?timeout:float ->
     Cstruct.t ->
     t -> [ `Ok of Cstruct.t | `Error of [ `Msg of string ] ] Lwt.t
+end
+
+module type SERVER = sig
+  type t
+  val create: Dns_forward_config.t -> t Lwt.t
+  val serve:
+    address:Dns_forward_config.address ->
+    ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
+    ?timeout:float ->
+    t -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
+  val destroy: t -> unit Lwt.t
 end
 
 module type READERWRITER = sig

@@ -6,6 +6,7 @@ true: package(dns mirage-flow cstruct.lwt channel io-page.unix)
 <bin>: include
 <lib>: include
 
+<lib/dns_forward.mli>: package(ppx_sexp_conv)
 <lib/dns_forward_config.*>: package(ppx_sexp_conv)
 <bin/*>: package(cmdliner), package(logs.fmt), package(lwt.unix)
 <lib_test/*>: package(alcotest), package(lwt.unix)

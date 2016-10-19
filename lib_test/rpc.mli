@@ -19,14 +19,14 @@
 
 type request = Cstruct.t
 type response = Cstruct.t
-type address = Dns_forward_config.address
+type address = Dns_forward.Config.address
 
-include Dns_forward_s.RPC_CLIENT
+include Dns_forward.Rpc.Client.S
   with type request  := request
    and type response := response
    and type address  := address
 
-include Dns_forward_s.RPC_SERVER
+include Dns_forward.Rpc.Server.S
   with type request  := request
    and type response := response
    and type address  := address

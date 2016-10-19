@@ -15,10 +15,7 @@
  *
  *)
 
-module Infix: sig
-  val (>>=): [< `Error of [< `Msg of 'a ] | `Ok of 'b ] Lwt.t ->
-    ('b -> ([> `Error of [> `Msg of 'a ] ] as 'c) Lwt.t) -> 'c Lwt.t
-end
+type 'a t = [ `Ok of 'a | `Error of [ `Msg of string ] ]
 
 module FromFlowError(Flow: V1_LWT.FLOW): sig
   val (>>=): [< `Eof | `Error of Flow.error | `Ok of 'b ] Lwt.t ->
@@ -27,3 +24,11 @@ module FromFlowError(Flow: V1_LWT.FLOW): sig
 end
 
 val errorf: ('a, unit, string, [> `Error of [> `Msg of string ] ] Lwt.t) format4 -> 'a
+
+
+module Lwt: sig
+module Infix: sig
+  val (>>=): [< `Error of [< `Msg of 'a ] | `Ok of 'b ] Lwt.t ->
+    ('b -> ([> `Error of [> `Msg of 'a ] ] as 'c) Lwt.t) -> 'c Lwt.t
+end
+end

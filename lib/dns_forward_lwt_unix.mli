@@ -15,5 +15,20 @@
  *
  *)
 
-module Tcp: Dns_forward_s.SOCKETS
-module Udp: Dns_forward_s.SOCKETS
+(** DNS utilities over Lwt_unix *)
+
+module Resolver: sig
+  module Udp: Dns_forward.Resolver.S
+  (** A DNS resolver over UDP *)
+
+  module Tcp: Dns_forward.Resolver.S
+  (** A DNS resolver over TCP *)
+end
+
+module Server: sig
+  module Udp: Dns_forward.Server.S
+  (** A forwarding DNS proxy over UDP *)
+
+  module Tcp: Dns_forward.Server.S
+  (** A forwarding DNS proxy over TCP *)
+end

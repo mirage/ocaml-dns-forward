@@ -15,9 +15,14 @@
  *
  *)
 
-(** DNS over UDP uses the UDP datagrams to delineate message boundaries *)
+module type S = Dns_forward_s.READERWRITER
 
-module ReaderWriter(Flow: V1_LWT.FLOW): sig
+module Tcp(Flow: V1_LWT.FLOW): sig
+  include Dns_forward_s.READERWRITER
+    with type flow = Flow.flow
+end
+
+module Udp(Flow: V1_LWT.FLOW): sig
   include Dns_forward_s.READERWRITER
     with type flow = Flow.flow
 end

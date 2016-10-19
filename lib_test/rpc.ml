@@ -14,12 +14,13 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
+open Dns_forward
 let errorf = Dns_forward_error.errorf
 
 type request = Cstruct.t
 type response = Cstruct.t
-type address = Dns_forward_config.address
-let string_of_address a = Ipaddr.to_string a.Dns_forward_config.ip ^ ":" ^ (string_of_int a.Dns_forward_config.port)
+type address = Config.address
+let string_of_address a = Ipaddr.to_string a.Config.ip ^ ":" ^ (string_of_int a.Config.port)
 
 type cb = request -> [ `Ok of response | `Error of [ `Msg of string ] ] Lwt.t
 
