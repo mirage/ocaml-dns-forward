@@ -25,11 +25,15 @@ module Log = (val Logs.src_log src : Logs.LOG)
 module type Client = Dns_forward_s.RPC_CLIENT
 module type Server = Dns_forward_s.RPC_SERVER
 
-module Make
-  (Sockets: Dns_forward_s.SOCKETS)
+module Error = Dns_forward_error.Infix
+
+module Client
+  (Sockets: Dns_forward_s.FLOW_CLIENT with type address = Ipaddr.t * int)
   (Packet: Dns_forward_s.READERWRITER with type flow = Sockets.flow)
   (Time: V1_LWT.TIME) = struct
   type address = Dns_forward_config.address
+  type request = Cstruct.t
+  type response = Cstruct.t
 
   type t = {
     address: address;
@@ -40,7 +44,6 @@ module Make
     free_ids: Dns_forward_free_id.t;
   }
 
-  module Error = Dns_forward_error.Infix
   module FlowError = Dns_forward_error.FromFlowError(Sockets)
 
   let disconnect t =
@@ -115,9 +118,6 @@ module Make
     t.disconnect_on_idle <- (let open Lwt.Infix in Time.sleep 30. >>= fun () -> disconnect t);
     Lwt.return (`Ok rw)
 
-  type request = Cstruct.t
-  type response = Cstruct.t
-
   let connect address =
     let rw = None in
     let m = Lwt_mutex.create () in
@@ -184,6 +184,16 @@ module Make
         (* Rewrite the query id back to the original *)
         Cstruct.BE.set_uint16 buf 0 client_id;
         Lwt.return (`Ok buf)
+end
+
+module Server
+  (Sockets: Dns_forward_s.FLOW_SERVER with type address = Ipaddr.t * int)
+  (Packet: Dns_forward_s.READERWRITER with type flow = Sockets.flow)
+  (Time: V1_LWT.TIME) = struct
+  type address = Dns_forward_config.address
+  type request = Cstruct.t
+  type response = Cstruct.t
+
   type server = {
     address: address;
     server: Sockets.server;

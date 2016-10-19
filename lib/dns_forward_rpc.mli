@@ -20,21 +20,14 @@
 module type Client = Dns_forward_s.RPC_CLIENT
 module type Server = Dns_forward_s.RPC_SERVER
 
-module Make
-  (Sockets: Dns_forward_s.SOCKETS)
+module Client
+  (Sockets: Dns_forward_s.FLOW_CLIENT with type address = Ipaddr.t * int)
   (Packet: Dns_forward_s.READERWRITER with type flow = Sockets.flow)
-  (Time: V1_LWT.TIME): sig
-  type request = Cstruct.t
-  type response = Cstruct.t
-  type address = Dns_forward_config.address
+  (Time: V1_LWT.TIME):
+  Dns_forward_s.RPC_CLIENT
 
-  include Dns_forward_s.RPC_CLIENT
-    with type request  := request
-     and type response := response
-     and type address  := address
-
-  include Dns_forward_s.RPC_SERVER
-    with type request  := request
-     and type response := response
-     and type address  := address
-end
+module Server
+  (Sockets: Dns_forward_s.FLOW_SERVER with type address = Ipaddr.t * int)
+  (Packet: Dns_forward_s.READERWRITER with type flow = Sockets.flow)
+  (Time: V1_LWT.TIME):
+  Dns_forward_s.RPC_SERVER
