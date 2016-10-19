@@ -15,5 +15,15 @@
  *
  *)
 
-module Make_server = Dns_forward_server.Make
-module Make_resolver = Dns_forward_resolver.Make
+
+module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME): sig
+  (** A simple DNS resolver *)
+
+  include Dns_forward_s.RESOLVER
+
+  val create: Dns_forward_config.t -> t Lwt.t
+  (** Construct a resolver given some configuration *)
+
+  val destroy: t -> unit Lwt.t
+  (** Destroy and free all resources associated with the resolver *)
+end

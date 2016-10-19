@@ -15,5 +15,21 @@
  *
  *)
 
-module Make_server = Dns_forward_server.Make
-module Make_resolver = Dns_forward_resolver.Make
+module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME): sig
+
+  type t
+  (** A forwarding DNS proxy *)
+
+  val create: Dns_forward_config.t -> t Lwt.t
+  (** Construct a forwarding DNS proxy given some configuration *)
+
+  val serve:
+    address:Dns_forward_config.address ->
+    ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
+    ?timeout:float ->
+    t -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
+  (** Serve requests on the given [address] forever *)
+
+  val destroy: t -> unit Lwt.t
+  (** Shutdown the server and release allocated resources *)
+end

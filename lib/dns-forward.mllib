@@ -5,3 +5,5 @@ Dns_forward_tcp
 Dns_forward_error
 Dns_forward_free_id
 Dns_forward_rpc
+Dns_forward_resolver
+Dns_forward_server
