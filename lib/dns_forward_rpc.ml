@@ -22,7 +22,7 @@ let src =
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
-module Error = Dns_forward_error.Infix
+module Error = Dns_forward_error.Lwt.Infix
 
 module Client = struct
 

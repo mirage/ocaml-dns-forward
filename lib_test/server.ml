@@ -15,7 +15,7 @@
  *
  *)
 
-module Error = Dns_forward_error.Infix
+module Error = Dns_forward.Error.Lwt.Infix
 
 module Make(Server: Dns_forward.Rpc.Server.S) = struct
   type t = {

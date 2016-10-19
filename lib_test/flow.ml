@@ -14,7 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
-module Error = Dns_forward_error.Infix
+module Error = Dns_forward.Error.Lwt.Infix
 let errorf = Dns_forward_error.errorf
 
 type buffer = Cstruct.t

@@ -18,13 +18,6 @@ open Lwt.Infix
 
 type 'a t = [ `Ok of 'a | `Error of [ `Msg of string ] ]
 
-
-module Infix = struct
-  let (>>=) m f = m >>= function
-    | `Error (`Msg m) -> Lwt.return (`Error (`Msg m))
-    | `Ok x -> f x
-end
-
 module FromFlowError(Flow: V1_LWT.FLOW) = struct
   let (>>=) m f = m >>= function
     | `Eof -> Lwt.return (`Error (`Msg "Unexpected end of file"))
@@ -33,3 +26,13 @@ module FromFlowError(Flow: V1_LWT.FLOW) = struct
 end
 
 let errorf fmt = Printf.ksprintf (fun s -> Lwt.return (`Error (`Msg s))) fmt
+
+module L = Lwt
+
+module Lwt = struct
+  module Infix = struct
+    let (>>=) m f = m >>= function
+      | `Error (`Msg m) -> L.return (`Error (`Msg m))
+      | `Ok x -> f x
+  end
+end

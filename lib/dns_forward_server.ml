@@ -40,7 +40,7 @@ module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(
     Lwt.return { resolver; server = None }
 
   let serve ~address ?local_names_cb ?timeout t =
-    let open Dns_forward_error.Infix in
+    let open Dns_forward_error.Lwt.Infix in
     Server.bind address
     >>= fun server ->
     t.server <- Some server;

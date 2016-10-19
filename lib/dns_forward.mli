@@ -20,6 +20,13 @@ module Error: sig
   (** All errors are currently fatal and should cause the request being processed
       or the program to abort *)
 
+  module Lwt: sig
+    module Infix: sig
+      val (>>=): [< `Error of [< `Msg of 'a ] | `Ok of 'b ] Lwt.t ->
+        ('b -> ([> `Error of [> `Msg of 'a ] ] as 'c) Lwt.t) -> 'c Lwt.t
+    end
+  end
+
 end
 
 module Flow: sig

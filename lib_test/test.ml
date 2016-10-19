@@ -1,5 +1,5 @@
 
-module Error = Dns_forward_error.Infix
+module Error = Dns_forward.Error.Lwt.Infix
 
 let fresh_id =
   let next = ref 0 in

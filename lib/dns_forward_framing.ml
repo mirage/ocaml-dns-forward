@@ -25,7 +25,7 @@ module Log = (val Logs.src_log src : Logs.LOG)
 module type S = Dns_forward_s.READERWRITER
 
 module Tcp(Flow: V1_LWT.FLOW) = struct
-  module Error = Dns_forward_error.Infix
+  module Error = Dns_forward_error.Lwt.Infix
   let errorf = Dns_forward_error.errorf
 
   module C = Channel.Make(Flow)
@@ -98,7 +98,7 @@ module Tcp(Flow: V1_LWT.FLOW) = struct
 end
 
 module Udp(Flow: V1_LWT.FLOW) = struct
-  module Error = Dns_forward_error.Infix
+  module Error = Dns_forward_error.Lwt.Infix
   let errorf = Dns_forward_error.errorf
 
   type request = Cstruct.t

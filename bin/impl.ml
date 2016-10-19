@@ -72,7 +72,7 @@ let serve port filename =
     >>= fun tcp ->
     let address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
     let t =
-      let open Dns_forward_error.Infix in
+      let open Dns_forward.Error.Lwt.Infix in
       Udp_forwarder.serve ~address udp
       >>= fun () ->
       Tcp_forwarder.serve ~address tcp
