@@ -65,12 +65,12 @@ let serve port filename =
     read_lines filename
     >>= fun lines ->
     let all = String.concat "" lines in
-    let config = Dns_forward_config.t_of_sexp @@ Sexplib.Sexp.of_string all in
+    let config = Dns_forward.Config.t_of_sexp @@ Sexplib.Sexp.of_string all in
     Udp_forwarder.create config
     >>= fun udp ->
     Tcp_forwarder.create config
     >>= fun tcp ->
-    let address = { Dns_forward_config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
+    let address = { Dns_forward.Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
     let t =
       let open Dns_forward.Error.Lwt.Infix in
       Udp_forwarder.serve ~address udp

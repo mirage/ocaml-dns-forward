@@ -20,5 +20,6 @@ module Error = Dns_forward_error
 module Flow = Dns_forward_flow
 module Rpc = Dns_forward_rpc
 module Framing = Dns_forward_framing
+module Config = Dns_forward_config
 module Server = Dns_forward_server
 module Resolver = Dns_forward_resolver

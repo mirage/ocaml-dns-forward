@@ -106,6 +106,32 @@ module Framing: sig
   (** Use UDP framing *)
 end
 
+module Config: sig
+  type address = {
+    ip: Ipaddr.t;
+    port: int;
+  }
+  (** The address of a DNS server *)
+
+  type domain = string list
+  (** A DNS domain e.g. [ "a"; "b" ] would be the domain a.b. *)
+
+  type server = {
+    zones: domain list; (** use this server for these specific domains *)
+    address: address;
+  }
+  (** A single upstream DNS server. If [zones = []] then the server can handle
+      all queries; otherwise [zones] is a list of domains that this server
+      should be preferentially queried for. For example if an organisation
+      has a VPN and a special DNS server for the domain `mirage.io` it may
+      want to only send queries for `foo.mirage.io` to this server and avoid
+      leaking internal names by sending queries to public server. *)
+
+  type t = server list [@@deriving sexp]
+  (** Upstream DNS servers *)
+
+end
+
 module Rpc: sig
   (** A Remote Procedure Call client and server implementation *)
 
@@ -121,7 +147,7 @@ module Rpc: sig
       type response = Cstruct.t
       (** A complete response *)
 
-      type address = Dns_forward_config.address
+      type address = Config.address
       (** The address of the remote endpoint *)
 
       val connect: address -> t Error.t Lwt.t
@@ -156,7 +182,7 @@ module Rpc: sig
       type response = Cstruct.t
       (** A complete response *)
 
-      type address = Dns_forward_config.address
+      type address = Config.address
       (** The address of the server *)
 
       val bind: address -> server Error.t Lwt.t
@@ -186,7 +212,7 @@ module Resolver: sig
   module type S = sig
     type t
 
-    val create: Dns_forward_config.t -> t Lwt.t
+    val create: Config.t -> t Lwt.t
     (** Construct a resolver given some configuration *)
 
     val destroy: t -> unit Lwt.t
@@ -218,11 +244,11 @@ module Server: sig
     type t
     (** A forwarding DNS proxy *)
 
-    val create: Dns_forward_config.t -> t Lwt.t
+    val create: Config.t -> t Lwt.t
     (** Construct a forwarding DNS proxy given some configuration *)
 
     val serve:
-      address:Dns_forward_config.address ->
+      address:Config.address ->
       ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
       ?timeout:float ->
       t -> unit Error.t Lwt.t
