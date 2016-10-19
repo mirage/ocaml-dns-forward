@@ -15,23 +15,20 @@
  *
  *)
 
-module Tcp: sig
-  type address = Ipaddr.t * int
+(** DNS utilities over Lwt_unix *)
 
-  include Dns_forward.Flow.Client
-    with type address := address
-  include Dns_forward.Flow.Server
-    with type address := address
-     and type flow := flow
-end
-module Udp: sig
-  type address = Ipaddr.t * int
+module Resolver: sig
+  module Udp: Dns_forward.Resolver.S
+  (** A DNS resolver over UDP *)
 
-  include Dns_forward.Flow.Client
-    with type address := address
-  include Dns_forward.Flow.Server
-    with type address := address
-     and type flow := flow
+  module Tcp: Dns_forward.Resolver.S
+  (** A DNS resolver over TCP *)
 end
 
-(* FIXME: instantiate Dns_forward_rpc here and potentially hide Tcp and Udp *)
+module Server: sig
+  module Udp: Dns_forward.Server.S
+  (** A forwarding DNS proxy over UDP *)
+
+  module Tcp: Dns_forward.Server.S
+  (** A forwarding DNS proxy over TCP *)
+end

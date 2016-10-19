@@ -41,14 +41,7 @@ module Time = struct
 end
 
 open Dns_forward
-
-module Udp_client = Rpc.Client.Make(Dns_forward_lwt_unix.Udp)(Framing.Udp(Dns_forward_lwt_unix.Udp))(Time)
-module Udp_server = Rpc.Server.Make(Dns_forward_lwt_unix.Udp)(Framing.Udp(Dns_forward_lwt_unix.Udp))(Time)
-module Udp_forwarder = Server.Make(Udp_server)(Udp_client)(Time)
-
-module Tcp_client = Rpc.Client.Make(Dns_forward_lwt_unix.Tcp)(Framing.Tcp(Dns_forward_lwt_unix.Tcp))(Time)
-module Tcp_server = Rpc.Server.Make(Dns_forward_lwt_unix.Tcp)(Framing.Tcp(Dns_forward_lwt_unix.Tcp))(Time)
-module Tcp_forwarder = Server.Make(Tcp_server)(Tcp_client)(Time)
+open Dns_forward_lwt_unix
 
 let max_udp_length = 65507
 
@@ -68,16 +61,16 @@ let serve port filename =
     >>= fun lines ->
     let all = String.concat "" lines in
     let config = Config.t_of_sexp @@ Sexplib.Sexp.of_string all in
-    Udp_forwarder.create config
+    Server.Udp.create config
     >>= fun udp ->
-    Tcp_forwarder.create config
+    Server.Tcp.create config
     >>= fun tcp ->
     let address = { Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
     let t =
       let open Error.Lwt.Infix in
-      Udp_forwarder.serve ~address udp
+      Server.Udp.serve ~address udp
       >>= fun () ->
-      Tcp_forwarder.serve ~address tcp
+      Server.Tcp.serve ~address tcp
       >>= fun () ->
       let t, _ = Lwt.task () in
       t in
