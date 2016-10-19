@@ -6,3 +6,4 @@ Dns_forward_rpc
 Dns_forward_resolver
 Dns_forward_server
 Dns_forward_framing
+Dns_forward_flow

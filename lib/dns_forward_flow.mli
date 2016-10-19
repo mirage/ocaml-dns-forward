@@ -14,9 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
-include Dns_forward_s
 
-module Flow = Dns_forward_flow
-module Framing = Dns_forward_framing
-module Server = Dns_forward_server
-module Resolver = Dns_forward_resolver
+module type Client = Dns_forward_s.FLOW_CLIENT
+
+module type Server = Dns_forward_s.FLOW_SERVER

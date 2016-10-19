@@ -15,6 +15,44 @@
  *
  *)
 
+module Flow: sig
+  (** A BSD-socket-like interface for establishing flows by connecting to a
+      well-known address (see Client) or by listening for incoming connections
+      on a well-known address (see Server) *)
+
+  module type Client = sig
+    include Mirage_flow_s.SHUTDOWNABLE
+
+    type address
+    (** Identifies an endpoint for [connect] *)
+
+    val connect: ?read_buffer_size:int -> address
+      -> [ `Ok of flow | `Error of [ `Msg of string ] ] Lwt.t
+    (** [connect address] creates a connection to [address] and returns
+        he connected flow. *)
+  end
+  module type Server = sig
+    type server
+    (* A server bound to some address *)
+
+    type address
+
+    val bind: address -> [ `Ok of server | `Error of [ `Msg of string ]] Lwt.t
+    (** Bind a server to an address *)
+
+    val getsockname: server -> address
+    (** Query the address the server is bound to *)
+
+    type flow
+
+    val listen: server -> (flow -> unit Lwt.t) -> unit
+    (** Accept connections forever, calling the callback with each one.
+        Connections are closed automatically when the callback finishes. *)
+
+    val shutdown: server -> unit Lwt.t
+    (** Stop accepting connections on the given server *)
+  end
+end
 
 module Framing: sig
   (** DNS messages are framed when sent over other protocols. These modules
