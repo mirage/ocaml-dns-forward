@@ -62,6 +62,8 @@ let or_fail_msg m = m >>= function
   | `Error (`Msg m) -> Lwt.fail (Failure m)
   | `Ok x -> Lwt.return x
 
+module type S = Dns_forward_s.RESOLVER
+
 module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
 
   type t = {

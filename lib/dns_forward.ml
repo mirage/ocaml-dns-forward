@@ -14,6 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
+include Dns_forward_s
 
 module Make_server = Dns_forward_server.Make
-module Make_resolver = Dns_forward_resolver.Make
+module Resolver = Dns_forward_resolver

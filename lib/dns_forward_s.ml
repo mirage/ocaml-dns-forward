@@ -84,6 +84,8 @@ end
 
 module type RESOLVER = sig
   type t
+  val create: Dns_forward_config.t -> t Lwt.t
+  val destroy: t -> unit Lwt.t
   val answer:
     ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
     ?timeout:float ->
