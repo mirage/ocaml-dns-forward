@@ -15,5 +15,23 @@
  *
  *)
 
-module Tcp: Dns_forward_s.SOCKETS
-module Udp: Dns_forward_s.SOCKETS
+module Tcp: sig
+  type address = Ipaddr.t * int
+
+  include Dns_forward.Flow.Client
+    with type address := address
+  include Dns_forward.Flow.Server
+    with type address := address
+     and type flow := flow
+end
+module Udp: sig
+  type address = Ipaddr.t * int
+
+  include Dns_forward.Flow.Client
+    with type address := address
+  include Dns_forward.Flow.Server
+    with type address := address
+     and type flow := flow
+end
+
+(* FIXME: instantiate Dns_forward_rpc here and potentially hide Tcp and Udp *)
