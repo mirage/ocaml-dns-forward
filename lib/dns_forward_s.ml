@@ -93,6 +93,17 @@ module type RESOLVER = sig
     t -> [ `Ok of Cstruct.t | `Error of [ `Msg of string ] ] Lwt.t
 end
 
+module type SERVER = sig
+  type t
+  val create: Dns_forward_config.t -> t Lwt.t
+  val serve:
+    address:Dns_forward_config.address ->
+    ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
+    ?timeout:float ->
+    t -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
+  val destroy: t -> unit Lwt.t
+end
+
 module type READERWRITER = sig
   (** Read and write DNS packets from a flow *)
   type request = Cstruct.t

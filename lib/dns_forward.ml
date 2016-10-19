@@ -16,5 +16,5 @@
  *)
 include Dns_forward_s
 
-module Make_server = Dns_forward_server.Make
+module Server = Dns_forward_server
 module Resolver = Dns_forward_resolver

@@ -24,6 +24,8 @@ module Log = (val Logs.src_log src : Logs.LOG)
 
 open Lwt.Infix
 
+module type S = Dns_forward_s.SERVER
+
 module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
   module Resolver = Dns_forward_resolver.Make(Client)(Time)
 

@@ -79,7 +79,7 @@ let test_forwarder_zone () =
     S.serve ~address:bar_address bar_server
     >>= fun () ->
     (* a forwarder which uses both servers *)
-    let module F = Dns_forward.Make_server(Rpc)(Rpc)(Time) in
+    let module F = Dns_forward.Server.Make(Rpc)(Rpc)(Time) in
     let config = [
       { Dns_forward_config.address = foo_address; zones = [ [ "foo" ] ] };
       { Dns_forward_config.address = bar_address; zones = [] }
@@ -126,7 +126,7 @@ let test_local_lookups () =
     let open Error in
     S.serve ~address:public_address public_server
     >>= fun () ->
-    let module F = Dns_forward.Make_server(Rpc)(Rpc)(Time) in
+    let module F = Dns_forward.Server.Make(Rpc)(Rpc)(Time) in
     let config = [
       { Dns_forward_config.address = public_address; zones = [] };
     ] in
@@ -177,7 +177,7 @@ let test_tcp_multiplexing () =
     let open Error in
     S.serve ~address:public_address public_server
     >>= fun () ->
-    let module F = Dns_forward.Make_server(Proto)(Proto)(Time) in
+    let module F = Dns_forward.Server.Make(Proto)(Proto)(Time) in
     let config = [
       { Dns_forward_config.address = public_address; zones = [] };
     ] in
