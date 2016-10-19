@@ -16,6 +16,9 @@
  *)
 open Lwt.Infix
 
+type 'a t = [ `Ok of 'a | `Error of [ `Msg of string ] ]
+
+
 module Infix = struct
   let (>>=) m f = m >>= function
     | `Error (`Msg m) -> Lwt.return (`Error (`Msg m))

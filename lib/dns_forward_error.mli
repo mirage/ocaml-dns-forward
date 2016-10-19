@@ -15,6 +15,8 @@
  *
  *)
 
+type 'a t = [ `Ok of 'a | `Error of [ `Msg of string ] ]
+
 module Infix: sig
   val (>>=): [< `Error of [< `Msg of 'a ] | `Ok of 'b ] Lwt.t ->
     ('b -> ([> `Error of [> `Msg of 'a ] ] as 'c) Lwt.t) -> 'c Lwt.t
