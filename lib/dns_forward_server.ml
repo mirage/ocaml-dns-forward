@@ -36,17 +36,17 @@ module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(
     mutable server: Server.server option;
   }
 
-  let create config =
-    Resolver.create config
+  let create ?local_names_cb ?timeout config =
+    Resolver.create ?local_names_cb ?timeout config
     >>= fun resolver ->
     Lwt.return { resolver; server = None }
 
-  let serve ~address ?local_names_cb ?timeout t =
+  let serve ~address t =
     let open Lwt_result.Infix in
     Server.bind address
     >>= fun server ->
     t.server <- Some server;
-    Server.listen server (fun buf -> Resolver.answer ?local_names_cb ?timeout buf t.resolver)
+    Server.listen server (fun buf -> Resolver.answer buf t.resolver)
     >>= fun () ->
     Lwt_result.return ()
 

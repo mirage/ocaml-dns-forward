@@ -69,22 +69,23 @@ end
 
 module type RESOLVER = sig
   type t
-  val create: Dns_forward_config.t -> t Lwt.t
-  val destroy: t -> unit Lwt.t
-  val answer:
+  val create:
     ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
     ?timeout:float ->
-    Cstruct.t ->
-    t -> (Cstruct.t, [ `Msg of string ]) Lwt_result.t
+    Dns_forward_config.t ->
+    t Lwt.t
+  val destroy: t -> unit Lwt.t
+  val answer: Cstruct.t -> t -> (Cstruct.t, [ `Msg of string ]) Lwt_result.t
 end
 
 module type SERVER = sig
   type t
-  val create: Dns_forward_config.t -> t Lwt.t
-  val serve:
-    address:Dns_forward_config.address ->
+  val create:
     ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
     ?timeout:float ->
+    Dns_forward_config.t -> t Lwt.t
+  val serve:
+    address:Dns_forward_config.address ->
     t -> (unit, [ `Msg of string ]) Lwt_result.t
   val destroy: t -> unit Lwt.t
 end

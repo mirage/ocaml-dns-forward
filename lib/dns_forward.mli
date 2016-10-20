@@ -208,17 +208,16 @@ module Resolver: sig
   module type S = sig
     type t
 
-    val create: Config.t -> t Lwt.t
+    val create:
+      ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
+      ?timeout:float ->
+      Config.t -> t Lwt.t
     (** Construct a resolver given some configuration *)
 
     val destroy: t -> unit Lwt.t
     (** Destroy and free all resources associated with the resolver *)
 
-    val answer:
-      ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
-      ?timeout:float ->
-      Cstruct.t ->
-      t -> Cstruct.t Error.t
+    val answer: Cstruct.t -> t -> Cstruct.t Error.t
     (** Process a query by first checking whether the name can be satisfied
         locally via the [local_names_cb] and failing that, sending it to
         upstream servers according to the resolver configuration. By default
@@ -240,13 +239,14 @@ module Server: sig
     type t
     (** A forwarding DNS proxy *)
 
-    val create: Config.t -> t Lwt.t
+    val create:
+      ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
+      ?timeout:float ->
+      Config.t -> t Lwt.t
     (** Construct a forwarding DNS proxy given some configuration *)
 
     val serve:
       address:Config.address ->
-      ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
-      ?timeout:float ->
       t -> unit Error.t
     (** Serve requests on the given [address] forever *)
 

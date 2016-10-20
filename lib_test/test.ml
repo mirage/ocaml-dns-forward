@@ -131,9 +131,6 @@ let test_local_lookups () =
       { Dns_forward.Config.address = public_address; zones = [] };
     ] in
     let open Lwt.Infix in
-    F.create config
-    >>= fun f ->
-    let f_address = { Dns_forward.Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 5 } in
     let local_names_cb question =
       let open Dns.Packet in
       match question with
@@ -143,8 +140,11 @@ let test_local_lookups () =
         Lwt.return (Some [ { name; cls; flush; ttl; rdata } ])
       | _ ->
         Lwt.return None in
+    F.create ~local_names_cb config
+    >>= fun f ->
+    let f_address = { Dns_forward.Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 5 } in
     let open Error in
-    F.serve ~address:f_address ~local_names_cb f
+    F.serve ~address:f_address f
     >>= fun () ->
     Rpc.connect f_address
     >>= fun c ->
