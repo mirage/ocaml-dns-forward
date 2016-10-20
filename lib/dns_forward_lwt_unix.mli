@@ -26,9 +26,9 @@ module Resolver: sig
 end
 
 module Server: sig
-  module Udp: Dns_forward.Server.S
+  module Udp: Dns_forward.Server.S with type resolver = Resolver.Udp.t
   (** A forwarding DNS proxy over UDP *)
 
-  module Tcp: Dns_forward.Server.S
+  module Tcp: Dns_forward.Server.S with type resolver = Resolver.Tcp.t
   (** A forwarding DNS proxy over TCP *)
 end

@@ -78,14 +78,17 @@ let test_forwarder_zone () =
 
     S.serve ~address:bar_address bar_server
     >>= fun () ->
-    (* a forwarder which uses both servers *)
-    let module F = Dns_forward.Server.Make(Rpc)(Rpc)(Time) in
+    (* a resolver which uses both servers *)
+    let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
     let config = [
       { Dns_forward.Config.address = foo_address; zones = [ [ "foo" ] ] };
       { Dns_forward.Config.address = bar_address; zones = [] }
     ] in
     let open Lwt.Infix in
-    F.create config
+    R.create config
+    >>= fun r ->
+    let module F = Dns_forward.Server.Make(Rpc)(R) in
+    F.create r
     >>= fun f ->
     let f_address = { Dns_forward.Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 3 } in
     let open Error in
@@ -126,14 +129,12 @@ let test_local_lookups () =
     let open Error in
     S.serve ~address:public_address public_server
     >>= fun () ->
-    let module F = Dns_forward.Server.Make(Rpc)(Rpc)(Time) in
+    let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
+
     let config = [
       { Dns_forward.Config.address = public_address; zones = [] };
     ] in
     let open Lwt.Infix in
-    F.create config
-    >>= fun f ->
-    let f_address = { Dns_forward.Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 5 } in
     let local_names_cb question =
       let open Dns.Packet in
       match question with
@@ -143,8 +144,14 @@ let test_local_lookups () =
         Lwt.return (Some [ { name; cls; flush; ttl; rdata } ])
       | _ ->
         Lwt.return None in
+    R.create ~local_names_cb config
+    >>= fun r ->
+    let module F = Dns_forward.Server.Make(Rpc)(R) in
+    F.create r
+    >>= fun f ->
+    let f_address = { Dns_forward.Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 5 } in
     let open Error in
-    F.serve ~address:f_address ~local_names_cb f
+    F.serve ~address:f_address f
     >>= fun () ->
     Rpc.connect f_address
     >>= fun c ->
@@ -178,12 +185,15 @@ let test_tcp_multiplexing () =
     let open Error in
     S.serve ~address:public_address public_server
     >>= fun () ->
-    let module F = Dns_forward.Server.Make(Proto_server)(Proto_client)(Time) in
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
     let config = [
       { Dns_forward.Config.address = public_address; zones = [] };
     ] in
     let open Lwt.Infix in
-    F.create config
+    R.create config
+    >>= fun r ->
+    let module F = Dns_forward.Server.Make(Proto_server)(R) in
+    F.create r
     >>= fun f ->
     let f_address = { Dns_forward.Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 7 } in
     let open Error in

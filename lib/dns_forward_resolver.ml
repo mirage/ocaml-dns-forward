@@ -70,21 +70,23 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
 
   type t = {
     connections: (Dns_forward_config.server * Client.t) list;
+    local_names_cb: (Dns.Packet.question -> Dns.Packet.rr list option Lwt.t);
+    timeout: float;
   }
 
-  let create config =
+  let create ?(local_names_cb=fun _ -> Lwt.return_none) ?(timeout=2.0) config =
     Lwt_list.map_s (fun server ->
       or_fail_msg @@ Client.connect server.Dns_forward_config.address
       >>= fun client ->
       Lwt.return (server, client)
     ) config
     >>= fun connections ->
-    Lwt.return { connections }
+    Lwt.return { connections; local_names_cb; timeout }
 
   let destroy t =
     Lwt_list.iter_s (fun (_, c) -> Client.disconnect c) t.connections
 
-  let answer ?local_names_cb ?(timeout=2.0) buffer t =
+  let answer buffer t =
     let len = Cstruct.len buffer in
     let buf = Dns.Buf.of_cstruct buffer in
     match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
@@ -94,12 +96,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
       let questions = request.questions in
       begin match questions with
       | [ question ] ->
-        begin match local_names_cb with
-        | Some cb ->
-          cb question
-        | None ->
-          Lwt.return_none
-        end
+        t.local_names_cb question
       | _ ->
         Lwt.return_none
       end >>= fun local ->
@@ -124,7 +121,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
           Lwt.return (Some reply) in
 
         (* Pick the first reply to come back, or timeout *)
-        ( Lwt.pick @@ (Time.sleep timeout >>= fun () -> Lwt.return None) :: (List.map rpc servers)
+        ( Lwt.pick @@ (Time.sleep t.timeout >>= fun () -> Lwt.return None) :: (List.map rpc servers)
           >>= function
           | None -> Lwt_result.fail (`Msg "no response within the timeout")
           | Some reply -> Lwt_result.return reply
