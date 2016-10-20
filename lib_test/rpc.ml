@@ -22,7 +22,7 @@ type response = Cstruct.t
 type address = Config.address
 let string_of_address a = Ipaddr.to_string a.Config.ip ^ ":" ^ (string_of_int a.Config.port)
 
-type cb = request -> [ `Ok of response | `Error of [ `Msg of string ] ] Lwt.t
+type cb = request -> (response, [ `Msg of string ]) Result.result Lwt.t
 
 type t = {
   mutable cb: cb;
@@ -38,7 +38,7 @@ let get_connections () = Hashtbl.fold (fun k v acc -> (k, v) :: acc) nr_connects
 let disconnect t =
   let nr = Hashtbl.find nr_connects t.server_address - 1 in
   if nr = 0 then Hashtbl.remove nr_connects t.server_address else Hashtbl.replace nr_connects t.server_address nr;
-  t.cb <- (fun _ -> Lwt.return (`Error (`Msg "disconnected")));
+  t.cb <- (fun _ -> Lwt.return (Result.Error (`Msg "disconnected")));
   Lwt.return_unit
 
 type server = {
@@ -51,22 +51,22 @@ let connect address =
   if Hashtbl.mem bound address then begin
     Hashtbl.replace nr_connects address (if Hashtbl.mem nr_connects address then Hashtbl.find nr_connects address else 1);
     let cb = (Hashtbl.find bound address).listen_cb in
-    Lwt.return (`Ok { cb; server_address = address })
+    Lwt.return (Result.Ok { cb; server_address = address })
   end else errorf "connect: no server bound to %s" (string_of_address address)
 
 let bind address =
-  let listen_cb _ = Lwt.return (`Error (`Msg "no callback")) in
+  let listen_cb _ = Lwt.return (Result.Error (`Msg "no callback")) in
   let server = { listen_cb; address } in
   if Hashtbl.mem bound address
-  then Lwt.return (`Error (`Msg "address already bound"))
+  then Lwt.return (Result.Error (`Msg "address already bound"))
   else begin
     Hashtbl.replace bound address server;
-    Lwt.return (`Ok server)
+    Lwt.return (Result.Ok server)
   end
 let listen server cb =
   server.listen_cb <- cb;
-  Lwt.return (`Ok ())
+  Lwt.return (Result.Ok ())
 let shutdown server =
-  server.listen_cb <- (fun _ -> Lwt.return (`Error (`Msg "shutdown")));
+  server.listen_cb <- (fun _ -> Lwt.return (Result.Error (`Msg "shutdown")));
   Hashtbl.remove bound server.address;
   Lwt.return_unit

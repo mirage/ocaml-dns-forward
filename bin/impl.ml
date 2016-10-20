@@ -67,7 +67,7 @@ let serve port filename =
     >>= fun tcp ->
     let address = { Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
     let t =
-      let open Error.Lwt.Infix in
+      let open Error.Infix in
       Server.Udp.serve ~address udp
       >>= fun () ->
       Server.Tcp.serve ~address tcp
@@ -75,6 +75,6 @@ let serve port filename =
       let t, _ = Lwt.task () in
       t in
     t >>= function
-    | `Error (`Msg m) -> Lwt.return (`Error(true, m))
-    | `Ok () -> Lwt.return (`Ok ())
+    | Result.Error (`Msg m) -> Lwt.return (`Error(true, m))
+    | Result.Ok () -> Lwt.return (`Ok ())
   end

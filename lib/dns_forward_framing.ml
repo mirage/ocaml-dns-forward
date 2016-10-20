@@ -14,6 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
+module Lwt_result = Dns_forward_lwt_result (* remove when this is available *)
 
 let src =
   let src = Logs.Src.create "Dns_forward" ~doc:"DNS framing" in
@@ -25,7 +26,6 @@ module Log = (val Logs.src_log src : Logs.LOG)
 module type S = Dns_forward_s.READERWRITER
 
 module Tcp(Flow: V1_LWT.FLOW) = struct
-  module Error = Dns_forward_error.Lwt.Infix
   let errorf = Dns_forward_error.errorf
 
   module C = Channel.Make(Flow)
@@ -51,13 +51,13 @@ module Tcp(Flow: V1_LWT.FLOW) = struct
   let read t =
     Lwt_mutex.with_lock t.read_m
       (fun () ->
-        let open Error in
+        let open Lwt_result.Infix in
         Lwt.catch
           (fun () ->
             let open Lwt.Infix in
             C.read_exactly ~len:2 t.c
             >>= fun bufs ->
-            Lwt.return (`Ok bufs)
+            Lwt_result.return bufs
           ) (fun e ->
             errorf "Failed to read response header: %s" (Printexc.to_string e)
           )
@@ -69,12 +69,12 @@ module Tcp(Flow: V1_LWT.FLOW) = struct
             let open Lwt.Infix in
             C.read_exactly ~len t.c
             >>= fun bufs ->
-            Lwt.return (`Ok bufs)
+            Lwt_result.return bufs
           ) (fun e ->
             errorf "Failed to read response payload (%d bytes): %s" len (Printexc.to_string e)
           )
         >>= fun bufs ->
-        Lwt.return (`Ok (Cstruct.concat bufs))
+        Lwt_result.return (Cstruct.concat bufs)
       )
 
   let write t buffer =
@@ -90,7 +90,7 @@ module Tcp(Flow: V1_LWT.FLOW) = struct
             let open Lwt.Infix in
             C.flush t.c
             >>= fun () ->
-            Lwt.return (`Ok ())
+            Lwt_result.return ()
           ) (fun e ->
             errorf "Failed to write %d bytes: %s" (Cstruct.len buffer) (Printexc.to_string e)
           )
@@ -98,7 +98,7 @@ module Tcp(Flow: V1_LWT.FLOW) = struct
 end
 
 module Udp(Flow: V1_LWT.FLOW) = struct
-  module Error = Dns_forward_error.Lwt.Infix
+  module Error = Dns_forward_error.Infix
   let errorf = Dns_forward_error.errorf
 
   type request = Cstruct.t
@@ -116,7 +116,7 @@ module Udp(Flow: V1_LWT.FLOW) = struct
     Flow.read t
     >>= function
     | `Ok buf ->
-      Lwt.return (`Ok buf)
+      Lwt_result.return buf
     | `Eof ->
       errorf "read: Eof"
     | `Error e ->
@@ -127,7 +127,7 @@ module Udp(Flow: V1_LWT.FLOW) = struct
     Flow.write t buf
     >>= function
     | `Ok buf ->
-      Lwt.return (`Ok buf)
+      Lwt_result.return buf
     | `Eof ->
       errorf "read: Eof"
     | `Error e ->

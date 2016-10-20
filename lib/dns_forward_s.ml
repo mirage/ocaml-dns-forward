@@ -14,18 +14,19 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
+module Lwt_result = Dns_forward_lwt_result (* remove when this is available *)
 
 module type FLOW_CLIENT = sig
   include Mirage_flow_s.SHUTDOWNABLE
   type address
   val connect: ?read_buffer_size:int -> address
-    -> [ `Ok of flow | `Error of [ `Msg of string ] ] Lwt.t
+    -> (flow, [ `Msg of string ]) Lwt_result.t
 end
 
 module type FLOW_SERVER = sig
   type server
   type address
-  val bind: address -> [ `Ok of server | `Error of [ `Msg of string ]] Lwt.t
+  val bind: address -> (server, [ `Msg of string ]) Lwt_result.t
   val getsockname: server -> address
   type flow
   val listen: server -> (flow -> unit Lwt.t) -> unit
@@ -50,8 +51,8 @@ module type RPC_CLIENT = sig
   type response = Cstruct.t
   type address = Dns_forward_config.address
   type t
-  val connect: address -> [ `Ok of t | `Error of [ `Msg of string ] ] Lwt.t
-  val rpc: t -> request -> [ `Ok of response | `Error of [ `Msg of string ] ] Lwt.t
+  val connect: address -> (t, [ `Msg of string ]) Lwt_result.t
+  val rpc: t -> request -> (response, [ `Msg of string ]) Lwt_result.t
   val disconnect: t -> unit Lwt.t
 end
 
@@ -61,8 +62,8 @@ module type RPC_SERVER = sig
   type address = Dns_forward_config.address
 
   type server
-  val bind: address -> [ `Ok of server | `Error of [ `Msg of string ] ] Lwt.t
-  val listen: server -> (request -> [ `Ok of response | `Error of [ `Msg of string ] ] Lwt.t) -> [`Ok of unit | `Error of [ `Msg of string ]] Lwt.t
+  val bind: address -> (server, [ `Msg of string ]) Lwt_result.t
+  val listen: server -> (request -> (response, [ `Msg of string ]) Lwt_result.t) -> (unit, [ `Msg of string ]) Lwt_result.t
   val shutdown: server -> unit Lwt.t
 end
 
@@ -74,7 +75,7 @@ module type RESOLVER = sig
     ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
     ?timeout:float ->
     Cstruct.t ->
-    t -> [ `Ok of Cstruct.t | `Error of [ `Msg of string ] ] Lwt.t
+    t -> (Cstruct.t, [ `Msg of string ]) Lwt_result.t
 end
 
 module type SERVER = sig
@@ -84,7 +85,7 @@ module type SERVER = sig
     address:Dns_forward_config.address ->
     ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
     ?timeout:float ->
-    t -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
+    t -> (unit, [ `Msg of string ]) Lwt_result.t
   val destroy: t -> unit Lwt.t
 end
 
@@ -95,7 +96,7 @@ module type READERWRITER = sig
   type t
   type flow
   val connect: flow -> t
-  val read: t -> [ `Ok of request | `Error of [ `Msg of string ] ] Lwt.t
-  val write: t -> response -> [ `Ok of unit | `Error of [ `Msg of string ] ] Lwt.t
+  val read: t -> (request, [ `Msg of string ]) Lwt_result.t
+  val write: t -> response -> (unit, [ `Msg of string]) Lwt_result.t
   val close: t -> unit Lwt.t
 end

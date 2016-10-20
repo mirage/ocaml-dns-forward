@@ -40,7 +40,7 @@ module Common = struct
   let error_message = function
    | `Msg x -> x
 
-  let errorf fmt = Printf.ksprintf (fun s -> Lwt.return (`Error (`Msg s))) fmt
+  let errorf fmt = Printf.ksprintf (fun s -> Lwt.return (Result.Error (`Msg s))) fmt
 
   type address = Ipaddr.t * int
 
@@ -96,7 +96,7 @@ module Tcp = struct
       (fun () ->
          Lwt_unix.connect fd sockaddr
          >>= fun () ->
-         Lwt.return (`Ok (of_fd ~read_buffer_size address fd))
+         Lwt.return (Result.Ok (of_fd ~read_buffer_size address fd))
       )
       (fun e ->
          Lwt_unix.close fd
@@ -215,7 +215,7 @@ module Tcp = struct
       (fun () ->
         Lwt_unix.setsockopt fd Lwt_unix.SO_REUSEADDR true;
         Lwt_unix.bind fd (sockaddr_of_address address);
-        Lwt.return (`Ok { server_fd = Some fd; read_buffer_size = default_read_buffer_size; address })
+        Lwt.return (Result.Ok { server_fd = Some fd; read_buffer_size = default_read_buffer_size; address })
       ) (fun e ->
         Lwt_unix.close fd
         >>= fun () ->
@@ -319,7 +319,7 @@ module Udp = struct
     (* Win32 requires all sockets to be bound however macOS and Linux don't *)
     (try Lwt_unix.bind fd (Lwt_unix.ADDR_INET(Unix.inet_addr_any, 0)) with _ -> ());
     let sockaddr = sockaddr_of_address address in
-    Lwt.return (`Ok (of_fd ?read_buffer_size sockaddr address fd))
+    Lwt.return (Result.Ok (of_fd ?read_buffer_size sockaddr address fd))
 
   let read t = match t.fd, t.already_read with
     | None, _ -> Lwt.return `Eof
@@ -393,7 +393,7 @@ module Udp = struct
     try
       let sockaddr = sockaddr_of_address address in
       Lwt_unix.bind fd sockaddr;
-      Lwt.return (`Ok { server_fd = Some fd; address })
+      Lwt.return (Result.Ok { server_fd = Some fd; address })
     with
     | e -> errorf "udp:%s: bind caught %s"
       (string_of_address address) (Printexc.to_string e)

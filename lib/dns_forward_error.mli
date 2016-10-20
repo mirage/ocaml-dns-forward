@@ -15,20 +15,15 @@
  *
  *)
 
-type 'a t = [ `Ok of 'a | `Error of [ `Msg of string ] ]
+type 'a t = ('a, [ `Msg of string ]) Dns_forward_lwt_result.t
 
 module FromFlowError(Flow: V1_LWT.FLOW): sig
-  val (>>=): [< `Eof | `Error of Flow.error | `Ok of 'b ] Lwt.t ->
-    ('b -> ([> `Error of [> `Msg of string ] ] as 'c) Lwt.t) -> 'c Lwt.t
-
+  val ( >>= ) : [< `Eof | `Error of Flow.error | `Ok of 'b ] Lwt.t ->
+    ('b -> ('c, [> `Msg of string ] as 'd) result Lwt.t) -> ('c, 'd) result Lwt.t
 end
 
-val errorf: ('a, unit, string, [> `Error of [> `Msg of string ] ] Lwt.t) format4 -> 'a
+val errorf: ('a, unit, string, ('b, [> `Msg of string ]) result Lwt.t) format4 -> 'a
 
-
-module Lwt: sig
 module Infix: sig
-  val (>>=): [< `Error of [< `Msg of 'a ] | `Ok of 'b ] Lwt.t ->
-    ('b -> ([> `Error of [> `Msg of 'a ] ] as 'c) Lwt.t) -> 'c Lwt.t
-end
+  include module type of Dns_forward_lwt_result.Infix
 end
