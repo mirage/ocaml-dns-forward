@@ -1,5 +1,5 @@
 
-module Error = Dns_forward.Error.Lwt.Infix
+module Error = Dns_forward.Error.Infix
 
 let fresh_id =
   let next = ref 0 in
@@ -25,8 +25,8 @@ let parse_response response =
   let pkt = Dns.Packet.parse (Cstruct.to_bigarray response) in
   match pkt.Dns.Packet.answers with
   | [ { Dns.Packet.rdata = Dns.Packet.A ipv4; _ } ] ->
-    Lwt.return (`Ok ipv4)
-  | _ -> Lwt.return (`Error (`Msg "failed to find answers"))
+    Lwt.return (Result.Ok ipv4)
+  | _ -> Lwt.return (Result.Error (`Msg "failed to find answers"))
 
 let test_server () =
   match Lwt_main.run begin
@@ -48,11 +48,11 @@ let test_server () =
     let open Lwt.Infix in
     Rpc.disconnect c
     >>= fun () ->
-    Lwt.return (`Ok ())
+    Lwt.return (Result.Ok ())
   end with
-  | `Ok () ->
+  | Result.Ok () ->
     Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
-  | `Error (`Msg m) -> failwith m
+  | Result.Error (`Msg m) -> failwith m
 
 module Time = struct
   type 'a io = 'a Lwt.t
@@ -104,15 +104,15 @@ let test_forwarder_zone () =
     >>= fun () ->
     F.destroy f
     >>= fun () ->
-    Lwt.return (`Ok ())
+    Lwt.return (Result.Ok ())
   end with
-  | `Ok () ->
+  | Result.Ok () ->
     (* the disconnects and close should have removed all the connections: *)
     Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
     (* The server should have sent the query only to foo and not to bar *)
     Alcotest.(check int) "foo_server queries" 1 (S.get_nr_queries foo_server);
     Alcotest.(check int) "bar_server queries" 0 (S.get_nr_queries bar_server);
-  | `Error (`Msg m) -> failwith m
+  | Result.Error (`Msg m) -> failwith m
 
 let test_local_lookups () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
@@ -159,11 +159,11 @@ let test_local_lookups () =
     >>= fun () ->
     F.destroy f
     >>= fun () ->
-    Lwt.return (`Ok ())
+    Lwt.return (Result.Ok ())
   end with
-  | `Ok () ->
+  | Result.Ok () ->
     Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
-  | `Error (`Msg m) -> failwith m
+  | Result.Error (`Msg m) -> failwith m
 
 let test_tcp_multiplexing () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
@@ -198,15 +198,15 @@ let test_tcp_multiplexing () =
       parse_response response
       >>= fun ipv4 ->
       Alcotest.(check string) "IPv4" foo_public (Ipaddr.V4.to_string ipv4);
-      Lwt.return (`Ok ()) in
+      Lwt.return (Result.Ok ()) in
     let rec seq f = function
-      | 0 -> Lwt.return (`Ok ())
+      | 0 -> Lwt.return (Result.Ok ())
       | n ->
         f ()
         >>= fun () ->
         seq f (n - 1) in
     let rec par f = function
-      | 0 -> Lwt.return (`Ok ())
+      | 0 -> Lwt.return (Result.Ok ())
       | n ->
         let first = f () in
         let rest = par f (n - 1) in
@@ -221,11 +221,11 @@ let test_tcp_multiplexing () =
     >>= fun () ->
     F.destroy f
     >>= fun () ->
-    Lwt.return (`Ok ())
+    Lwt.return (Result.Ok ())
   end with
-  | `Ok () ->
+  | Result.Ok () ->
     Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
-  | `Error (`Msg m) -> failwith m
+  | Result.Error (`Msg m) -> failwith m
 
 let test_infra_set = [
   "Server responds correctly", `Quick, test_server;

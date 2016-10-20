@@ -15,7 +15,7 @@
  *
  *)
 open Dns_forward
-module Error = Error.Lwt.Infix
+module Error = Error.Infix
 
 module Make(Server: Rpc.Server.S) = struct
   type t = {
@@ -42,19 +42,19 @@ module Make(Server: Rpc.Server.S) = struct
             | None,   Ipaddr.V6 _  -> None
           ) None t.names with
           | None ->
-            Lwt.return (`Error (`Msg "no mapping for name"))
+            Lwt.return (Result.Error (`Msg "no mapping for name"))
           | Some v4 ->
             let answers = [ { name = q_name; cls = RR_IN; flush = false; ttl = 0l; rdata = A v4 } ] in
             let pkt = { Dns.Packet.id; detail; questions = request.questions; authorities=[]; additionals; answers } in
             let buf = Dns.Buf.create 1024 in
             let buf = marshal buf pkt in
-            Lwt.return (`Ok (Cstruct.of_bigarray buf))
+            Lwt.return (Result.Ok (Cstruct.of_bigarray buf))
           end
         | _ ->
-          Lwt.return (`Error (`Msg "unexpected query type"))
+          Lwt.return (Result.Error (`Msg "unexpected query type"))
       end
     | None ->
-      Lwt.return (`Error (`Msg "failed to parse request"))
+      Lwt.return (Result.Error (`Msg "failed to parse request"))
 
   let serve ~address t =
     let open Error in
@@ -62,6 +62,6 @@ module Make(Server: Rpc.Server.S) = struct
     >>= fun server ->
     Server.listen server (fun buf -> answer buf t)
     >>= fun () ->
-    Lwt.return (`Ok ())
+    Lwt.return (Result.Ok ())
 
 end

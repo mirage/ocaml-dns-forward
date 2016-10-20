@@ -16,17 +16,13 @@
  *)
 
 module Error: sig
-  type 'a t = [ `Ok of 'a | `Error of [ `Msg of string ] ]
+  type 'a t = ('a, [ `Msg of string ]) Result.result Lwt.t
   (** All errors are currently fatal and should cause the request being processed
       or the program to abort *)
 
-  module Lwt: sig
-    module Infix: sig
-      val (>>=): [< `Error of [< `Msg of 'a ] | `Ok of 'b ] Lwt.t ->
-        ('b -> ([> `Error of [> `Msg of 'a ] ] as 'c) Lwt.t) -> 'c Lwt.t
-    end
+  module Infix: sig
+    val (>>=): 'a t -> ('a -> 'b t) -> 'b t
   end
-
 end
 
 module Flow: sig
@@ -40,7 +36,7 @@ module Flow: sig
     type address
     (** Identifies an endpoint for [connect] *)
 
-    val connect: ?read_buffer_size:int -> address -> flow Error.t Lwt.t
+    val connect: ?read_buffer_size:int -> address -> flow Error.t
     (** [connect address] creates a connection to [address] and returns
         he connected flow. *)
   end
@@ -50,7 +46,7 @@ module Flow: sig
 
     type address
 
-    val bind: address -> server Error.t Lwt.t
+    val bind: address -> server Error.t
     (** Bind a server to an address *)
 
     val getsockname: server -> address
@@ -89,10 +85,10 @@ module Framing: sig
     val connect: flow -> t
     (** Prepare to read and write complete DNS messages over the given flow *)
 
-    val read: t -> request Error.t Lwt.t
+    val read: t -> request Error.t
     (** Read a complete DNS message *)
 
-    val write: t -> response -> unit Error.t Lwt.t
+    val write: t -> response -> unit Error.t
     (** Write a complete DNS message *)
 
     val close: t -> unit Lwt.t
@@ -150,10 +146,10 @@ module Rpc: sig
       type address = Config.address
       (** The address of the remote endpoint *)
 
-      val connect: address -> t Error.t Lwt.t
+      val connect: address -> t Error.t
       (** Connect to the remote server *)
 
-      val rpc: t -> request -> response Error.t Lwt.t
+      val rpc: t -> request -> response Error.t
       (** Send a request and await a response. Multiple threads may call this
           in parallel and it is the implementation's job to associate the right
           response with the original request. *)
@@ -185,11 +181,11 @@ module Rpc: sig
       type address = Config.address
       (** The address of the server *)
 
-      val bind: address -> server Error.t Lwt.t
+      val bind: address -> server Error.t
       (** Bind to the given address. This will fail if the address does not exist
           or if another server is already bound there. *)
 
-      val listen: server -> (request -> response Error.t Lwt.t) -> unit Error.t Lwt.t
+      val listen: server -> (request -> response Error.t) -> unit Error.t
       (** Listen and accept incoming connections, use the provided callback to
           answer requests. *)
 
@@ -222,7 +218,7 @@ module Resolver: sig
       ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
       ?timeout:float ->
       Cstruct.t ->
-      t -> Cstruct.t Error.t Lwt.t
+      t -> Cstruct.t Error.t
     (** Process a query by first checking whether the name can be satisfied
         locally via the [local_names_cb] and failing that, sending it to
         upstream servers according to the resolver configuration. By default
@@ -251,7 +247,7 @@ module Server: sig
       address:Config.address ->
       ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
       ?timeout:float ->
-      t -> unit Error.t Lwt.t
+      t -> unit Error.t
     (** Serve requests on the given [address] forever *)
 
     val destroy: t -> unit Lwt.t

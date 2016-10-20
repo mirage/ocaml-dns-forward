@@ -16,7 +16,7 @@
  *)
 open Dns_forward
 
-module Error = Error.Lwt.Infix
+module Error = Error.Infix
 let errorf = Dns_forward_error.errorf
 
 type buffer = Cstruct.t
@@ -104,7 +104,7 @@ let close flow =
   Lwt.return_unit
 
 type server = {
-  mutable listen_cb: unit -> [ `Ok of flow | `Error of [ `Msg of string ] ] Lwt.t;
+  mutable listen_cb: unit -> (flow, [ `Msg of string ]) Result.result Lwt.t;
   address: address;
 }
 let bound = Hashtbl.create 7
@@ -118,17 +118,17 @@ let connect ?read_buffer_size:_ address =
     let open Error in
     cb ()
     >>= fun flow ->
-    Lwt.return (`Ok flow)
+    Lwt.return (Result.Ok flow)
   end else errorf "connect: no server bound to %s" (string_of_address address)
 
 let bind address =
-  let listen_cb _ = Lwt.return (`Error (`Msg "no callback")) in
+  let listen_cb _ = Lwt.return (Result.Error (`Msg "no callback")) in
   let server = { listen_cb; address } in
   if Hashtbl.mem bound address
-  then Lwt.return (`Error (`Msg "address already bound"))
+  then Lwt.return (Result.Error (`Msg "address already bound"))
   else begin
     Hashtbl.replace bound address server;
-    Lwt.return (`Ok server)
+    Lwt.return (Result.Ok server)
   end
 let listen server (cb: flow -> unit Lwt.t) =
   let listen_cb () =
@@ -142,9 +142,9 @@ let listen server (cb: flow -> unit Lwt.t) =
             Lwt.return_unit
           )
       );
-    Lwt.return (`Ok flow) in
+    Lwt.return (Result.Ok flow) in
   server.listen_cb <- listen_cb
 let shutdown server =
-  server.listen_cb <- (fun _ -> Lwt.return (`Error (`Msg "shutdown")));
+  server.listen_cb <- (fun _ -> Lwt.return (Result.Error (`Msg "shutdown")));
   Hashtbl.remove bound server.address;
   Lwt.return_unit

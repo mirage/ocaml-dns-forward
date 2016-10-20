@@ -15,6 +15,8 @@
  *
  *)
 
+module Lwt_result = Dns_forward_lwt_result (* remove when this is available *)
+
 let src =
   let src = Logs.Src.create "Dns_forward" ~doc:"DNS resolution" in
   Logs.Src.set_level src (Some Logs.Debug);
@@ -58,9 +60,9 @@ let choose_servers config request =
   end
 
 let or_fail_msg m = m >>= function
-  | `Error `Eof -> Lwt.fail End_of_file
-  | `Error (`Msg m) -> Lwt.fail (Failure m)
-  | `Ok x -> Lwt.return x
+  | Result.Error `Eof -> Lwt.fail End_of_file
+  | Result.Error (`Msg m) -> Lwt.fail (Failure m)
+  | Result.Ok x -> Lwt.return x
 
 module type S = Dns_forward_s.RESOLVER
 
@@ -109,7 +111,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
         let pkt = { id; detail; questions; answers; authorities; additionals } in
         let buf = Dns.Buf.create 1024 in
         let buf = marshal buf pkt in
-        Lwt.return (`Ok (Cstruct.of_bigarray buf))
+        Lwt_result.return (Cstruct.of_bigarray buf)
       | None ->
         let servers = choose_servers (List.map fst t.connections) request in
         (* send the request to all upstream servers *)
@@ -124,11 +126,11 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
         (* Pick the first reply to come back, or timeout *)
         ( Lwt.pick @@ (Time.sleep timeout >>= fun () -> Lwt.return None) :: (List.map rpc servers)
           >>= function
-          | None -> Lwt.return (`Error (`Msg "no response within the timeout"))
-          | Some reply -> Lwt.return (`Ok reply)
+          | None -> Lwt_result.fail (`Msg "no response within the timeout")
+          | Some reply -> Lwt_result.return reply
         )
       end
     | None ->
-      Lwt.return (`Error (`Msg "failed to parse request"))
+      Lwt_result.fail (`Msg "failed to parse request")
 
 end

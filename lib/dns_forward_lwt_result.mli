@@ -14,17 +14,16 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
-open Lwt.Infix
 
-type 'a t = ('a, [ `Msg of string ]) Dns_forward_lwt_result.t
+(** The same error type is supported in Lwt > 2.5.2. Once that is released we
+    can remove this shim. *)
 
-module FromFlowError(Flow: V1_LWT.FLOW) = struct
-  let (>>=) m f = m >>= function
-    | `Eof -> Lwt.return (Result.Error (`Msg "Unexpected end of file"))
-    | `Error e -> Lwt.return (Result.Error (`Msg (Flow.error_message e)))
-    | `Ok x -> f x
+type ('a, 'b) t = ('a, 'b) Result.result Lwt.t
+
+val return : 'a -> ('a, 'b) t
+
+val fail : 'b -> ('a, 'b) t
+
+module Infix: sig
+  val (>>=): ('a, 'e) t -> ('a -> ('b, 'e) t) -> ('b, 'e) t
 end
-
-let errorf fmt = Printf.ksprintf (fun s -> Lwt.return (Result.Error (`Msg s))) fmt
-
-module Infix = Dns_forward_lwt_result.Infix

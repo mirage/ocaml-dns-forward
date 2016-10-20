@@ -15,6 +15,8 @@
  *
  *)
 
+module Lwt_result = Dns_forward_lwt_result (* remove when this is available *)
+
 let src =
   let src = Logs.Src.create "Dns_forward" ~doc:"DNS serving" in
   Logs.Src.set_level src (Some Logs.Debug);
@@ -40,13 +42,13 @@ module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(
     Lwt.return { resolver; server = None }
 
   let serve ~address ?local_names_cb ?timeout t =
-    let open Dns_forward_error.Lwt.Infix in
+    let open Lwt_result.Infix in
     Server.bind address
     >>= fun server ->
     t.server <- Some server;
     Server.listen server (fun buf -> Resolver.answer ?local_names_cb ?timeout buf t.resolver)
     >>= fun () ->
-    Lwt.return (`Ok ())
+    Lwt_result.return ()
 
   let destroy { resolver; server } =
     Resolver.destroy resolver

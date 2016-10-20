@@ -16,15 +16,13 @@
  *)
 open Lwt.Infix
 
-type 'a t = ('a, [ `Msg of string ]) Dns_forward_lwt_result.t
+type ('a, 'b) t = ('a, 'b) Result.result Lwt.t
 
-module FromFlowError(Flow: V1_LWT.FLOW) = struct
+let return x = Lwt.return (Result.Ok x)
+let fail   y = Lwt.return (Result.Error y)
+
+module Infix = struct
   let (>>=) m f = m >>= function
-    | `Eof -> Lwt.return (Result.Error (`Msg "Unexpected end of file"))
-    | `Error e -> Lwt.return (Result.Error (`Msg (Flow.error_message e)))
-    | `Ok x -> f x
+    | Result.Error y -> Lwt.return (Result.Error y)
+    | Result.Ok x -> f x
 end
-
-let errorf fmt = Printf.ksprintf (fun s -> Lwt.return (Result.Error (`Msg s))) fmt
-
-module Infix = Dns_forward_lwt_result.Infix

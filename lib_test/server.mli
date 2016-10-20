@@ -23,7 +23,7 @@ module Make(Server: Rpc.Server.S): sig
   val make: (string * Ipaddr.t) list -> t
   (** Construct a server with a fixed set of name mappings *)
 
-  val serve: address: Config.address -> t -> unit Error.t Lwt.t
+  val serve: address: Config.address -> t -> unit Error.t
   (** Serve requests on the given IP and port forever *)
 
   val get_nr_queries: t -> int
