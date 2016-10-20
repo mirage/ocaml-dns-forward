@@ -28,17 +28,16 @@ open Lwt.Infix
 
 module type S = Dns_forward_s.SERVER
 
-module Make(Server: Dns_forward_s.RPC_SERVER)(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
-  module Resolver = Dns_forward_resolver.Make(Client)(Time)
+module Make(Server: Dns_forward_s.RPC_SERVER)(Resolver: Dns_forward_s.RESOLVER) = struct
+
+  type resolver = Resolver.t
 
   type t = {
     resolver: Resolver.t;
     mutable server: Server.server option;
   }
 
-  let create ?local_names_cb ?timeout config =
-    Resolver.create ?local_names_cb ?timeout config
-    >>= fun resolver ->
+  let create resolver =
     Lwt.return { resolver; server = None }
 
   let serve ~address t =

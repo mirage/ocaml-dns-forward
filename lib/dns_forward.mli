@@ -239,11 +239,10 @@ module Server: sig
     type t
     (** A forwarding DNS proxy *)
 
-    val create:
-      ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
-      ?timeout:float ->
-      Config.t -> t Lwt.t
-    (** Construct a forwarding DNS proxy given some configuration *)
+    type resolver
+
+    val create: resolver -> t Lwt.t
+    (** Construct a server given a resolver configuration *)
 
     val serve:
       address:Config.address ->
@@ -254,6 +253,6 @@ module Server: sig
     (** Shutdown the server and release allocated resources *)
   end
 
-  module Make(Server: Rpc.Server.S)(Client: Rpc.Client.S)(Time: V1_LWT.TIME): S
+  module Make(Server: Rpc.Server.S)(Resolver: Resolver.S): S with type resolver = Resolver.t
 
 end

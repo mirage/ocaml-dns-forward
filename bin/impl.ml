@@ -61,9 +61,13 @@ let serve port filename =
     >>= fun lines ->
     let all = String.concat "" lines in
     let config = Config.t_of_sexp @@ Sexplib.Sexp.of_string all in
-    Server.Udp.create config
+    Resolver.Udp.create config
+    >>= fun udp_resolver ->
+    Server.Udp.create udp_resolver
     >>= fun udp ->
-    Server.Tcp.create config
+    Resolver.Tcp.create config
+    >>= fun tcp_resolver ->
+    Server.Tcp.create tcp_resolver
     >>= fun tcp ->
     let address = { Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
     let t =
