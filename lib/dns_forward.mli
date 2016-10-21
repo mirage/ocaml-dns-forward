@@ -150,6 +150,7 @@ module Config: sig
   type t = Server.Set.t [@@deriving sexp]
   (** Upstream DNS servers *)
 
+  include Comparable with type t := t
 end
 
 module Rpc: sig

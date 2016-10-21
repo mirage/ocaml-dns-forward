@@ -49,3 +49,5 @@ end
 
 type t = Server.Set.t [@@deriving sexp]
 (** Upstream DNS servers *)
+
+val compare: t -> t -> int

@@ -77,3 +77,4 @@ module Server = struct
 end
 
 type t = Server.Set.t [@@deriving sexp]
+let compare = Server.Set.compare
