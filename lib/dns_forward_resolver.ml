@@ -46,7 +46,7 @@ let choose_servers config request =
   | { questions = [ { q_name; _ } ]; _ } ->
     let labels = Dns.Name.to_string_list q_name in
     let matching_servers = List.filter (fun server ->
-      List.fold_left (||) false @@ List.map (is_in_domain labels) server.zones
+      Domain.Set.fold (fun zone acc -> acc || (is_in_domain labels zone)) server.Server.zones false
     ) config in
     begin match matching_servers with
     | _ :: _ ->
@@ -54,7 +54,7 @@ let choose_servers config request =
       matching_servers
     | [] ->
       (* Otherwise send to all servers with no match *)
-      List.filter (fun server -> server.zones = []) config
+      List.filter (fun server -> server.Server.zones = Domain.Set.empty) config
     end
   | _ -> []
   end
@@ -69,14 +69,14 @@ module type S = Dns_forward_s.RESOLVER
 module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
 
   type t = {
-    connections: (Dns_forward_config.server * Client.t) list;
+    connections: (Dns_forward_config.Server.t * Client.t) list;
     local_names_cb: (Dns.Packet.question -> Dns.Packet.rr list option Lwt.t);
     timeout: float;
   }
 
   let create ?(local_names_cb=fun _ -> Lwt.return_none) ?(timeout=2.0) config =
     Lwt_list.map_s (fun server ->
-      or_fail_msg @@ Client.connect server.Dns_forward_config.address
+      or_fail_msg @@ Client.connect server.Dns_forward_config.Server.address
       >>= fun client ->
       Lwt.return (server, client)
     ) config
@@ -115,7 +115,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
         let rpc server =
           let open Dns_forward_config in
           let _, client = List.find (fun (s, _) -> s = server) t.connections in
-          Log.debug (fun f -> f "forwarding to server %s:%d" (Ipaddr.to_string server.address.Address.ip) server.address.Address.port);
+          Log.debug (fun f -> f "forwarding to server %s:%d" (Ipaddr.to_string server.Server.address.Address.ip) server.Server.address.Address.port);
           or_fail_msg @@ Client.rpc client buffer
           >>= fun reply ->
           Lwt.return (Some reply) in

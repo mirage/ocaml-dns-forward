@@ -80,9 +80,10 @@ let test_forwarder_zone () =
     >>= fun () ->
     (* a resolver which uses both servers *)
     let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
+    let open Dns_forward.Config in
     let config = [
-      { Dns_forward.Config.address = foo_address; zones = [ [ "foo" ] ] };
-      { Dns_forward.Config.address = bar_address; zones = [] }
+      { Server.address = foo_address; zones = Domain.Set.add [ "foo" ] Domain.Set.empty };
+      { Server.address = bar_address; zones = Domain.Set.empty }
     ] in
     let open Lwt.Infix in
     R.create config
@@ -130,9 +131,9 @@ let test_local_lookups () =
     S.serve ~address:public_address public_server
     >>= fun () ->
     let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
-
+    let open Dns_forward.Config in
     let config = [
-      { Dns_forward.Config.address = public_address; zones = [] };
+      { Server.address = public_address; zones = Domain.Set.empty };
     ] in
     let open Lwt.Infix in
     let local_names_cb question =
@@ -186,8 +187,9 @@ let test_tcp_multiplexing () =
     S.serve ~address:public_address public_server
     >>= fun () ->
     let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
+    let open Dns_forward.Config in
     let config = [
-      { Dns_forward.Config.address = public_address; zones = [] };
+      { Server.address = public_address; zones = Domain.Set.empty };
     ] in
     let open Lwt.Infix in
     R.create config

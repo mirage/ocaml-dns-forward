@@ -124,20 +124,26 @@ module Config: sig
     (** A DNS domain e.g. [ "a"; "b" ] would be the domain a.b. *)
 
     include Comparable with type t := t
+    module Set: Set.S with type elt = t
+    module Map: Map.S with type key = t
   end
 
-  type server = {
-    zones: Domain.t list; (** use this server for these specific domains *)
-    address: Address.t;
-  }
-  (** A single upstream DNS server. If [zones = []] then the server can handle
-      all queries; otherwise [zones] is a list of domains that this server
-      should be preferentially queried for. For example if an organisation
-      has a VPN and a special DNS server for the domain `mirage.io` it may
-      want to only send queries for `foo.mirage.io` to this server and avoid
-      leaking internal names by sending queries to public server. *)
+  module Server: sig
+    type t = {
+      zones: Domain.Set.t; (** use this server for these specific domains *)
+      address: Address.t;
+    }
+    (** A single upstream DNS server. If [zones = []] then the server can handle
+        all queries; otherwise [zones] is a list of domains that this server
+        should be preferentially queried for. For example if an organisation
+        has a VPN and a special DNS server for the domain `mirage.io` it may
+        want to only send queries for `foo.mirage.io` to this server and avoid
+        leaking internal names by sending queries to public server. *)
 
-  type t = server list [@@deriving sexp]
+    include Comparable with type t := t
+  end
+
+  type t = Server.t list [@@deriving sexp]
   (** Upstream DNS servers *)
 
 end

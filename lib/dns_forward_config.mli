@@ -28,13 +28,20 @@ module Domain: sig
   type t = string list
 
   val compare: t -> t -> int
+
+  module Set: Set.S with type elt = t
+  module Map: Map.S with type key = t
 end
 
-type server = {
-  zones: Domain.t list; (** use this server for these specific domains *)
-  address: Address.t;
-}
-(** A single upstream DNS server *)
+module Server: sig
+  type t = {
+    zones: Domain.Set.t; (** use this server for these specific domains *)
+    address: Address.t;
+  }
+  (** A single upstream DNS server *)
 
-type t = server list [@@deriving sexp]
+  val compare: t -> t -> int
+end
+
+type t = Server.t list [@@deriving sexp]
 (** Upstream DNS servers *)
