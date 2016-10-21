@@ -47,5 +47,5 @@ module Server: sig
   module Map: Map.S with type key = t
 end
 
-type t = Server.t list [@@deriving sexp]
+type t = Server.Set.t [@@deriving sexp]
 (** Upstream DNS servers *)
