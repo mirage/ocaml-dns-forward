@@ -21,6 +21,10 @@ module Address = struct
     ip: Ipaddr.t;
     port: int;
   } [@@deriving sexp]
+
+  let compare a b =
+    let ip = Ipaddr.compare a.ip b.ip in
+    if ip <> 0 then ip else Pervasives.compare a.port b.port
 end
 
 type domain = string list [@@deriving sexp]

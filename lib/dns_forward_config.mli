@@ -20,6 +20,8 @@ module Address: sig
     ip: Ipaddr.t;
     port: int;
   }
+
+  val compare: t -> t -> int
 end
 
 type domain = string list

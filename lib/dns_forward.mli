@@ -25,6 +25,12 @@ module Error: sig
   end
 end
 
+module type Comparable = sig
+  type t
+
+  val compare: t -> t -> int
+end
+
 module Flow: sig
   (** A BSD-socket-like interface for establishing flows by connecting to a
       well-known address (see Client) or by listening for incoming connections
@@ -109,6 +115,8 @@ module Config: sig
       port: int;
     }
     (** The address of a DNS server *)
+
+    include Comparable with type t := t
   end
 
   type domain = string list

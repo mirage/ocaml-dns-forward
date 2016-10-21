@@ -16,6 +16,12 @@
  *)
 module Lwt_result = Dns_forward_lwt_result (* remove when this is available *)
 
+module type Comparable = sig
+  type t
+
+  val compare: t -> t -> int
+end
+
 module type FLOW_CLIENT = sig
   include Mirage_flow_s.SHUTDOWNABLE
   type address
