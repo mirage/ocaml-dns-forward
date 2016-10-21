@@ -17,14 +17,19 @@
 open Sexplib.Std
 
 module Address = struct
-  type t = {
-    ip: Ipaddr.t;
-    port: int;
-  } [@@deriving sexp]
+  module M = struct
+    type t = {
+      ip: Ipaddr.t;
+      port: int;
+    } [@@deriving sexp]
 
-  let compare a b =
-    let ip = Ipaddr.compare a.ip b.ip in
-    if ip <> 0 then ip else Pervasives.compare a.port b.port
+    let compare a b =
+      let ip = Ipaddr.compare a.ip b.ip in
+      if ip <> 0 then ip else Pervasives.compare a.port b.port
+  end
+  include M
+  module Set = Set.Make(M)
+  module Map = Map.Make(M)
 end
 
 module Domain = struct
