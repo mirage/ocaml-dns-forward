@@ -16,16 +16,18 @@
  *)
 open Sexplib.Std
 
-type address = {
-  ip: Ipaddr.t;
-  port: int;
-} [@@deriving sexp]
+module Address = struct
+  type t = {
+    ip: Ipaddr.t;
+    port: int;
+  } [@@deriving sexp]
+end
 
 type domain = string list [@@deriving sexp]
 
 type server = {
   zones: domain list;
-  address: address;
+  address: Address.t;
 } [@@deriving sexp]
 
 type t = server list [@@deriving sexp]

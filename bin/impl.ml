@@ -69,7 +69,7 @@ let serve port filename =
     >>= fun tcp_resolver ->
     Server.Tcp.create tcp_resolver
     >>= fun tcp ->
-    let address = { Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
+    let address = { Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
     let t =
       let open Error.Infix in
       Server.Udp.serve ~address udp

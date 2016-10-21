@@ -15,16 +15,18 @@
  *
  *)
 
-type address = {
-  ip: Ipaddr.t;
-  port: int;
-}
+module Address: sig
+  type t = {
+    ip: Ipaddr.t;
+    port: int;
+  }
+end
 
 type domain = string list
 
 type server = {
   zones: domain list; (** use this server for these specific domains *)
-  address: address;
+  address: Address.t;
 }
 (** A single upstream DNS server *)
 

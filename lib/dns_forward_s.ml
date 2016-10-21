@@ -49,7 +49,7 @@ end
 module type RPC_CLIENT = sig
   type request = Cstruct.t
   type response = Cstruct.t
-  type address = Dns_forward_config.address
+  type address = Dns_forward_config.Address.t
   type t
   val connect: address -> (t, [ `Msg of string ]) Lwt_result.t
   val rpc: t -> request -> (response, [ `Msg of string ]) Lwt_result.t
@@ -59,7 +59,7 @@ end
 module type RPC_SERVER = sig
   type request = Cstruct.t
   type response = Cstruct.t
-  type address = Dns_forward_config.address
+  type address = Dns_forward_config.Address.t
 
   type server
   val bind: address -> (server, [ `Msg of string ]) Lwt_result.t
@@ -83,7 +83,7 @@ module type SERVER = sig
   type resolver
   val create: resolver -> t Lwt.t
   val serve:
-    address:Dns_forward_config.address ->
+    address:Dns_forward_config.Address.t ->
     t -> (unit, [ `Msg of string ]) Lwt_result.t
   val destroy: t -> unit Lwt.t
 end

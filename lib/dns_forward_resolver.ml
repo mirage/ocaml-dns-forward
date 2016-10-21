@@ -115,7 +115,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
         let rpc server =
           let open Dns_forward_config in
           let _, client = List.find (fun (s, _) -> s = server) t.connections in
-          Log.debug (fun f -> f "forwarding to server %s:%d" (Ipaddr.to_string server.address.ip) server.address.port);
+          Log.debug (fun f -> f "forwarding to server %s:%d" (Ipaddr.to_string server.address.Address.ip) server.address.Address.port);
           or_fail_msg @@ Client.rpc client buffer
           >>= fun reply ->
           Lwt.return (Some reply) in

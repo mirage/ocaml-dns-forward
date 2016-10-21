@@ -103,18 +103,20 @@ module Framing: sig
 end
 
 module Config: sig
-  type address = {
-    ip: Ipaddr.t;
-    port: int;
-  }
-  (** The address of a DNS server *)
+  module Address: sig
+    type t = {
+      ip: Ipaddr.t;
+      port: int;
+    }
+    (** The address of a DNS server *)
+  end
 
   type domain = string list
   (** A DNS domain e.g. [ "a"; "b" ] would be the domain a.b. *)
 
   type server = {
     zones: domain list; (** use this server for these specific domains *)
-    address: address;
+    address: Address.t;
   }
   (** A single upstream DNS server. If [zones = []] then the server can handle
       all queries; otherwise [zones] is a list of domains that this server
@@ -143,7 +145,7 @@ module Rpc: sig
       type response = Cstruct.t
       (** A complete response *)
 
-      type address = Config.address
+      type address = Config.Address.t
       (** The address of the remote endpoint *)
 
       val connect: address -> t Error.t
@@ -178,7 +180,7 @@ module Rpc: sig
       type response = Cstruct.t
       (** A complete response *)
 
-      type address = Config.address
+      type address = Config.Address.t
       (** The address of the server *)
 
       val bind: address -> server Error.t
@@ -245,7 +247,7 @@ module Server: sig
     (** Construct a server given a resolver configuration *)
 
     val serve:
-      address:Config.address ->
+      address:Config.Address.t ->
       t -> unit Error.t
     (** Serve requests on the given [address] forever *)
 

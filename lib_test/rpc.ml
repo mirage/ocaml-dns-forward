@@ -19,8 +19,8 @@ let errorf = Dns_forward_error.errorf
 
 type request = Cstruct.t
 type response = Cstruct.t
-type address = Config.address
-let string_of_address a = Ipaddr.to_string a.Config.ip ^ ":" ^ (string_of_int a.Config.port)
+type address = Config.Address.t
+let string_of_address a = Ipaddr.to_string a.Config.Address.ip ^ ":" ^ (string_of_int a.Config.Address.port)
 
 type cb = request -> (response, [ `Msg of string ]) Result.result Lwt.t
 
