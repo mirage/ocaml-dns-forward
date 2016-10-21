@@ -34,7 +34,7 @@ let test_server () =
     let s = S.make [ "foo", Ipaddr.V4 Ipaddr.V4.localhost; "bar", Ipaddr.of_string_exn "1.2.3.4" ] in
     let open Error in
     (* The virtual address we run our server on: *)
-    let address = { Dns_forward.Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 53 } in
+    let address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 53 } in
     S.serve ~address s
     >>= fun () ->
     Rpc.connect address
@@ -66,10 +66,10 @@ let test_forwarder_zone () =
   let foo_private = "192.168.1.1" in
   (* a VPN mapping 'foo' to an internal ip *)
   let foo_server = S.make [ "foo", Ipaddr.of_string_exn foo_private ] in
-  let foo_address = { Dns_forward.Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 1 } in
+  let foo_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 1 } in
   (* a public server mapping 'foo' to a public ip *)
   let bar_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
-  let bar_address = { Dns_forward.Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 2 } in
+  let bar_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 2 } in
 
   let open Error in
   match Lwt_main.run begin
@@ -80,9 +80,10 @@ let test_forwarder_zone () =
     >>= fun () ->
     (* a resolver which uses both servers *)
     let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
-    let config = [
-      { Dns_forward.Config.address = foo_address; zones = [ [ "foo" ] ] };
-      { Dns_forward.Config.address = bar_address; zones = [] }
+    let open Dns_forward.Config in
+    let config = Server.Set.of_list [
+      { Server.address = foo_address; zones = Domain.Set.add [ "foo" ] Domain.Set.empty };
+      { Server.address = bar_address; zones = Domain.Set.empty }
     ] in
     let open Lwt.Infix in
     R.create config
@@ -90,7 +91,7 @@ let test_forwarder_zone () =
     let module F = Dns_forward.Server.Make(Rpc)(R) in
     F.create r
     >>= fun f ->
-    let f_address = { Dns_forward.Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 3 } in
+    let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 3 } in
     let open Error in
     F.serve ~address:f_address f
     >>= fun () ->
@@ -125,14 +126,14 @@ let test_local_lookups () =
     let foo_private = "192.168.1.1" in
     (* a public server mapping 'foo' to a public ip *)
     let public_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
-    let public_address = { Dns_forward.Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 4 } in
+    let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 4 } in
     let open Error in
     S.serve ~address:public_address public_server
     >>= fun () ->
     let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
-
-    let config = [
-      { Dns_forward.Config.address = public_address; zones = [] };
+    let open Dns_forward.Config in
+    let config = Server.Set.of_list [
+      { Server.address = public_address; zones = Domain.Set.empty };
     ] in
     let open Lwt.Infix in
     let local_names_cb question =
@@ -149,7 +150,7 @@ let test_local_lookups () =
     let module F = Dns_forward.Server.Make(Rpc)(R) in
     F.create r
     >>= fun f ->
-    let f_address = { Dns_forward.Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 5 } in
+    let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 5 } in
     let open Error in
     F.serve ~address:f_address f
     >>= fun () ->
@@ -181,13 +182,14 @@ let test_tcp_multiplexing () =
     let foo_public = "8.8.8.8" in
     (* a public server mapping 'foo' to a public ip *)
     let public_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
-    let public_address = { Dns_forward.Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 6 } in
+    let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 6 } in
     let open Error in
     S.serve ~address:public_address public_server
     >>= fun () ->
     let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
-    let config = [
-      { Dns_forward.Config.address = public_address; zones = [] };
+    let open Dns_forward.Config in
+    let config = Server.Set.of_list [
+      { Server.address = public_address; zones = Domain.Set.empty };
     ] in
     let open Lwt.Infix in
     R.create config
@@ -195,7 +197,7 @@ let test_tcp_multiplexing () =
     let module F = Dns_forward.Server.Make(Proto_server)(R) in
     F.create r
     >>= fun f ->
-    let f_address = { Dns_forward.Config.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 7 } in
+    let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 7 } in
     let open Error in
     F.serve ~address:f_address f
     >>= fun () ->

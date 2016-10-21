@@ -15,18 +15,39 @@
  *
  *)
 
-type address = {
-  ip: Ipaddr.t;
-  port: int;
-}
+module Address: sig
+  type t = {
+    ip: Ipaddr.t;
+    port: int;
+  }
 
-type domain = string list
+  val compare: t -> t -> int
+  module Set: Set.S with type elt = t
+  module Map: Map.S with type key = t
+end
 
-type server = {
-  zones: domain list; (** use this server for these specific domains *)
-  address: address;
-}
-(** A single upstream DNS server *)
+module Domain: sig
+  type t = string list
 
-type t = server list [@@deriving sexp]
+  val compare: t -> t -> int
+
+  module Set: Set.S with type elt = t
+  module Map: Map.S with type key = t
+end
+
+module Server: sig
+  type t = {
+    zones: Domain.Set.t; (** use this server for these specific domains *)
+    address: Address.t;
+  }
+  (** A single upstream DNS server *)
+
+  val compare: t -> t -> int
+  module Set: Set.S with type elt = t
+  module Map: Map.S with type key = t
+end
+
+type t = Server.Set.t [@@deriving sexp]
 (** Upstream DNS servers *)
+
+val compare: t -> t -> int

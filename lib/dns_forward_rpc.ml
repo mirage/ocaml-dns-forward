@@ -31,7 +31,7 @@ module Client = struct
     (Sockets: Dns_forward_s.FLOW_CLIENT with type address = Ipaddr.t * int)
     (Packet: Dns_forward_s.READERWRITER with type flow = Sockets.flow)
     (Time: V1_LWT.TIME) = struct
-    type address = Dns_forward_config.address
+    type address = Dns_forward_config.Address.t
     type request = Cstruct.t
     type response = Cstruct.t
 
@@ -105,7 +105,7 @@ module Client = struct
       Lwt_mutex.with_lock t.m
         (fun () -> match t.rw with
           | None ->
-            Sockets.connect (t.address.Dns_forward_config.ip, t.address.Dns_forward_config.port)
+            Sockets.connect (t.address.Dns_forward_config.Address.ip, t.address.Dns_forward_config.Address.port)
             >>= fun flow ->
             let rw = Packet.connect flow in
             t.rw <- Some rw;
@@ -195,7 +195,7 @@ module Server = struct
     (Sockets: Dns_forward_s.FLOW_SERVER with type address = Ipaddr.t * int)
     (Packet: Dns_forward_s.READERWRITER with type flow = Sockets.flow)
     (Time: V1_LWT.TIME) = struct
-    type address = Dns_forward_config.address
+    type address = Dns_forward_config.Address.t
     type request = Cstruct.t
     type response = Cstruct.t
 
@@ -206,7 +206,7 @@ module Server = struct
 
     let bind address =
       let open Lwt_result.Infix in
-      Sockets.bind (address.Dns_forward_config.ip, address.Dns_forward_config.port)
+      Sockets.bind (address.Dns_forward_config.Address.ip, address.Dns_forward_config.Address.port)
       >>= fun server ->
       Lwt_result.return { address; server }
 

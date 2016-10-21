@@ -19,7 +19,7 @@
 
 type request = Cstruct.t
 type response = Cstruct.t
-type address = Dns_forward.Config.address
+type address = Dns_forward.Config.Address.t
 
 include Dns_forward.Rpc.Client.S
   with type request  := request

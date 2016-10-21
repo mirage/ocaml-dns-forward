@@ -25,6 +25,12 @@ module Error: sig
   end
 end
 
+module type Comparable = sig
+  type t
+
+  val compare: t -> t -> int
+end
+
 module Flow: sig
   (** A BSD-socket-like interface for establishing flows by connecting to a
       well-known address (see Client) or by listening for incoming connections
@@ -103,29 +109,48 @@ module Framing: sig
 end
 
 module Config: sig
-  type address = {
-    ip: Ipaddr.t;
-    port: int;
-  }
-  (** The address of a DNS server *)
+  module Address: sig
+    type t = {
+      ip: Ipaddr.t;
+      port: int;
+    }
+    (** The address of a DNS server *)
 
-  type domain = string list
-  (** A DNS domain e.g. [ "a"; "b" ] would be the domain a.b. *)
+    include Comparable with type t := t
+    module Set: Set.S with type elt = t
+    module Map: Map.S with type key = t
+  end
 
-  type server = {
-    zones: domain list; (** use this server for these specific domains *)
-    address: address;
-  }
-  (** A single upstream DNS server. If [zones = []] then the server can handle
-      all queries; otherwise [zones] is a list of domains that this server
-      should be preferentially queried for. For example if an organisation
-      has a VPN and a special DNS server for the domain `mirage.io` it may
-      want to only send queries for `foo.mirage.io` to this server and avoid
-      leaking internal names by sending queries to public server. *)
+  module Domain: sig
+    type t = string list
+    (** A DNS domain e.g. [ "a"; "b" ] would be the domain a.b. *)
 
-  type t = server list [@@deriving sexp]
+    include Comparable with type t := t
+    module Set: Set.S with type elt = t
+    module Map: Map.S with type key = t
+  end
+
+  module Server: sig
+    type t = {
+      zones: Domain.Set.t; (** use this server for these specific domains *)
+      address: Address.t;
+    }
+    (** A single upstream DNS server. If [zones = []] then the server can handle
+        all queries; otherwise [zones] is a list of domains that this server
+        should be preferentially queried for. For example if an organisation
+        has a VPN and a special DNS server for the domain `mirage.io` it may
+        want to only send queries for `foo.mirage.io` to this server and avoid
+        leaking internal names by sending queries to public server. *)
+
+    include Comparable with type t := t
+    module Set: Set.S with type elt = t
+    module Map: Map.S with type key = t
+  end
+
+  type t = Server.Set.t [@@deriving sexp]
   (** Upstream DNS servers *)
 
+  include Comparable with type t := t
 end
 
 module Rpc: sig
@@ -143,7 +168,7 @@ module Rpc: sig
       type response = Cstruct.t
       (** A complete response *)
 
-      type address = Config.address
+      type address = Config.Address.t
       (** The address of the remote endpoint *)
 
       val connect: address -> t Error.t
@@ -178,7 +203,7 @@ module Rpc: sig
       type response = Cstruct.t
       (** A complete response *)
 
-      type address = Config.address
+      type address = Config.Address.t
       (** The address of the server *)
 
       val bind: address -> server Error.t
@@ -245,7 +270,7 @@ module Server: sig
     (** Construct a server given a resolver configuration *)
 
     val serve:
-      address:Config.address ->
+      address:Config.Address.t ->
       t -> unit Error.t
     (** Serve requests on the given [address] forever *)
 
