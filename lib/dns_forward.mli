@@ -143,6 +143,8 @@ module Config: sig
         leaking internal names by sending queries to public server. *)
 
     include Comparable with type t := t
+    module Set: Set.S with type elt = t
+    module Map: Map.S with type key = t
   end
 
   type t = Server.t list [@@deriving sexp]

@@ -52,14 +52,19 @@ module Domain = struct
 end
 
 module Server = struct
-  type t = {
-    zones: Domain.Set.t;
-    address: Address.t;
-  } [@@deriving sexp]
+  module M = struct
+    type t = {
+      zones: Domain.Set.t;
+      address: Address.t;
+    } [@@deriving sexp]
 
-  let compare (a: t) (b: t) =
-    let address = Address.compare a.address b.address in
-    if address <> 0 then address else Domain.Set.compare a.zones a.zones
+    let compare (a: t) (b: t) =
+      let address = Address.compare a.address b.address in
+      if address <> 0 then address else Domain.Set.compare a.zones a.zones
+  end
+  include M
+  module Set = Set.Make(M)
+  module Map = Map.Make(M)
 end
 
 type t = Server.t list [@@deriving sexp]

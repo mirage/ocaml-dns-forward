@@ -43,6 +43,8 @@ module Server: sig
   (** A single upstream DNS server *)
 
   val compare: t -> t -> int
+  module Set: Set.S with type elt = t
+  module Map: Map.S with type key = t
 end
 
 type t = Server.t list [@@deriving sexp]
