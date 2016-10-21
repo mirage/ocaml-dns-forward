@@ -119,11 +119,15 @@ module Config: sig
     include Comparable with type t := t
   end
 
-  type domain = string list
-  (** A DNS domain e.g. [ "a"; "b" ] would be the domain a.b. *)
+  module Domain: sig
+    type t = string list
+    (** A DNS domain e.g. [ "a"; "b" ] would be the domain a.b. *)
+
+    include Comparable with type t := t
+  end
 
   type server = {
-    zones: domain list; (** use this server for these specific domains *)
+    zones: Domain.t list; (** use this server for these specific domains *)
     address: Address.t;
   }
   (** A single upstream DNS server. If [zones = []] then the server can handle

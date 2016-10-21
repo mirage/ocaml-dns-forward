@@ -27,10 +27,14 @@ module Address = struct
     if ip <> 0 then ip else Pervasives.compare a.port b.port
 end
 
-type domain = string list [@@deriving sexp]
+module Domain = struct
+  type t = string list [@@deriving sexp]
+
+  let compare (a: t) (b: t) = Pervasives.compare a b
+end
 
 type server = {
-  zones: domain list;
+  zones: Domain.t list;
   address: Address.t;
 } [@@deriving sexp]
 

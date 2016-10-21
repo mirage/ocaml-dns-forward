@@ -24,10 +24,14 @@ module Address: sig
   val compare: t -> t -> int
 end
 
-type domain = string list
+module Domain: sig
+  type t = string list
+
+  val compare: t -> t -> int
+end
 
 type server = {
-  zones: domain list; (** use this server for these specific domains *)
+  zones: Domain.t list; (** use this server for these specific domains *)
   address: Address.t;
 }
 (** A single upstream DNS server *)
