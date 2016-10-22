@@ -50,4 +50,11 @@ end
 type t = Server.Set.t [@@deriving sexp]
 (** Upstream DNS servers *)
 
+val of_string: string -> (t, [ `Msg of string ]) Result.result
+val to_string: t -> string
+
 val compare: t -> t -> int
+
+module Unix: sig
+  val of_resolv_conf: string -> (t, [ `Msg of string ]) Result.result
+end

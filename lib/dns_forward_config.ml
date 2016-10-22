@@ -78,3 +78,10 @@ end
 
 type t = Server.Set.t [@@deriving sexp]
 let compare = Server.Set.compare
+
+let to_string _ = failwith "unimplemented"
+let of_string _ = failwith "unimplemented"
+
+module Unix = struct
+  let of_resolv_conf _ = failwith "unimplemented"
+end
