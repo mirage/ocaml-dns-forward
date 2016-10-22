@@ -79,7 +79,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
       or_fail_msg @@ Client.connect server.Dns_forward_config.Server.address
       >>= fun client ->
       Lwt.return (server, client)
-    ) (Dns_forward_config.Server.Set.elements config)
+    ) (Dns_forward_config.Server.Set.elements config.Dns_forward_config.servers)
     >>= fun connections ->
     Lwt.return { connections; local_names_cb; timeout }
 

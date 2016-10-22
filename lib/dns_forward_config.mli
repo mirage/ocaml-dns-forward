@@ -47,7 +47,9 @@ module Server: sig
   module Map: Map.S with type key = t
 end
 
-type t = Server.Set.t [@@deriving sexp]
+type t = {
+  servers: Server.Set.t;
+} [@@deriving sexp]
 (** Upstream DNS servers *)
 
 val of_string: string -> (t, [ `Msg of string ]) Result.result

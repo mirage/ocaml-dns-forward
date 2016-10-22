@@ -76,8 +76,11 @@ module Server = struct
   module Map = Map.Make(M)
 end
 
-type t = Server.Set.t [@@deriving sexp]
-let compare = Server.Set.compare
+type t = {
+  servers: Server.Set.t;
+} [@@deriving sexp]
+
+let compare a b = Server.Set.compare a.servers b.servers
 
 let to_string _ = failwith "unimplemented"
 let of_string _ = failwith "unimplemented"
