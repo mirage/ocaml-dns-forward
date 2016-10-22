@@ -49,6 +49,7 @@ module Domain = struct
       sexp_of__t _t
   end
   module Map = Map.Make(M)
+  let to_string = String.concat "."
 end
 
 module Server = struct
@@ -76,5 +77,107 @@ module Server = struct
   module Map = Map.Make(M)
 end
 
-type t = Server.Set.t [@@deriving sexp]
-let compare = Server.Set.compare
+type t = {
+  servers: Server.Set.t;
+  search: string list;
+} [@@deriving sexp]
+
+let compare a b =
+  let servers = Server.Set.compare a.servers b.servers in
+  if servers <> 0 then servers else Pervasives.compare a.search b.search
+
+let nameserver_prefix = "nameserver "
+let search_prefix = "search "
+let zone_prefix = "zone "
+
+let of_string txt =
+  let open Astring in
+  try
+    (* Chop into lines *)
+    String.cuts ~sep:"\n" txt
+    |> List.map (String.trim ?drop:None)
+    |> List.filter (fun x -> x <> "")
+    |> List.fold_left
+      (fun acc line ->
+        if String.is_prefix ~affix:nameserver_prefix line then begin
+          let line = String.with_range ~first:(String.length nameserver_prefix) line in
+          if String.cut ~sep:"::" line <> None then begin
+            (* IPv6 *)
+            let host = Ipaddr.V6.of_string_exn line in
+            (`Nameserver (Ipaddr.V6 host, 53)) :: acc
+          end else match String.cut ~sep:"#" line with
+            | Some (host, port) ->
+              (* IPv4 with non-standard port *)
+              let host = Ipaddr.V4.of_string_exn host in
+              let port = int_of_string port in
+              (`Nameserver (Ipaddr.V4 host, port)) :: acc
+            | None ->
+              (* IPv4 with standard port *)
+              let host = Ipaddr.V4.of_string_exn line in
+              (`Nameserver (Ipaddr.V4 host, 53)) :: acc
+        end else if String.is_prefix ~affix:zone_prefix line then begin
+          let line = String.with_range ~first:(String.length zone_prefix) line in
+          (`Zones (String.cuts ~sep:" " line)) :: acc
+        end else if String.is_prefix ~affix:search_prefix line then begin
+          let line = String.with_range ~first:(String.length search_prefix) line in
+          (`Search (String.cuts ~sep:" " line)) :: acc
+        end else acc
+      ) []
+    (* Merge the zones and nameservers together *)
+    |> List.fold_left
+      (fun (zones_opt, acc) line -> match zones_opt, line with
+        | _, `Zones zones -> (Some zones, acc)
+        | Some zones, `Nameserver (ip, port) ->
+          let zones = List.map (String.cuts ~sep:"." ?rev:None ?empty:None) zones |> Domain.Set.of_list in
+          let server = { Server.address = { Address.ip; port }; zones } in
+          None, { acc with servers = Server.Set.add server acc.servers }
+        | None, `Nameserver (ip, port) ->
+          let server = { Server.address = { Address.ip; port }; zones = Domain.Set.empty } in
+          None, { acc with servers = Server.Set.add server acc.servers }
+        | _, `Search search ->
+          zones_opt, { acc with search }
+      ) (None, { servers = Server.Set.empty; search = [] })
+    |> snd |> fun x -> Result.Ok x
+  with e -> Result.Error (`Msg (Printf.sprintf "Failed to parse configuration: %s" (Printexc.to_string e)))
+
+let to_string t =
+  let nameservers = Server.Set.fold
+    (fun server acc ->
+      [ nameserver_prefix ^ (Ipaddr.to_string server.Server.address.Address.ip) ^ "#" ^ (string_of_int server.Server.address.Address.port) ]
+      @ (if server.Server.zones <> Domain.Set.empty then [ zone_prefix ^ (String.concat " " @@ List.map Domain.to_string @@ Domain.Set.elements server.Server.zones) ] else [])
+      @ acc
+    ) t.servers [] in
+  let search = List.map
+    (fun search ->
+      search_prefix ^ search
+    ) t.search in
+  String.concat "\n" (nameservers @ search)
+
+module Unix = struct
+  let of_resolv_conf txt =
+    let open Dns.Resolvconf in
+    let lines = Astring.String.cuts ~sep:"\n" txt in
+    let config = List.rev @@ List.fold_left (fun acc x ->
+        match map_line x with
+        | None -> acc
+        | Some x ->
+          begin
+            try
+              KeywordValue.of_string x :: acc
+            with
+            | _ -> acc
+          end
+      ) [] lines in
+    let servers = List.fold_left (fun acc x -> match x with
+      | KeywordValue.Nameserver(ip, Some port) ->
+        Server.Set.add { Server.address = { Address.ip; port }; zones = Domain.Set.empty } acc
+      | KeywordValue.Nameserver(ip, None) ->
+        Server.Set.add { Server.address = { Address.ip; port = 53 }; zones = Domain.Set.empty } acc
+      | _ -> acc
+    ) Server.Set.empty config in
+    let search = List.fold_left (fun acc x -> match x with
+      | KeywordValue.Search names -> names @ acc
+      | _ -> acc
+    ) [] config |> List.rev in
+    Result.Ok { servers; search }
+end

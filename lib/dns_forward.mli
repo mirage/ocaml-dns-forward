@@ -147,10 +147,26 @@ module Config: sig
     module Map: Map.S with type key = t
   end
 
-  type t = Server.Set.t [@@deriving sexp]
-  (** Upstream DNS servers *)
+  type t = {
+    servers: Server.Set.t; (** Upstream DNS servers *)
+    search: string list;   (** Ordered list of domains to search *)
+  } [@@deriving sexp]
+  (** A DNS configuration *)
 
   include Comparable with type t := t
+
+  val to_string: t -> string
+  (** Return a human-readable string corresponding to a configuration *)
+
+  val of_string: string -> (t, [ `Msg of string ]) Result.result
+  (** Parse the output of [to_string] *)
+
+  val compare: t -> t -> int
+
+  module Unix: sig
+    val of_resolv_conf: string -> (t, [ `Msg of string ]) Result.result
+    (** Parse a Unix-style /etc/resolv.conf file *)
+  end
 end
 
 module Rpc: sig

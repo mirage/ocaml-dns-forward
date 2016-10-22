@@ -81,10 +81,11 @@ let test_forwarder_zone () =
     (* a resolver which uses both servers *)
     let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
     let open Dns_forward.Config in
-    let config = Server.Set.of_list [
+    let servers = Server.Set.of_list [
       { Server.address = foo_address; zones = Domain.Set.add [ "foo" ] Domain.Set.empty };
       { Server.address = bar_address; zones = Domain.Set.empty }
     ] in
+    let config = { servers; search = [] } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->
@@ -132,9 +133,10 @@ let test_local_lookups () =
     >>= fun () ->
     let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
     let open Dns_forward.Config in
-    let config = Server.Set.of_list [
+    let servers = Server.Set.of_list [
       { Server.address = public_address; zones = Domain.Set.empty };
     ] in
+    let config = { servers; search = [] } in
     let open Lwt.Infix in
     let local_names_cb question =
       let open Dns.Packet in
@@ -188,9 +190,10 @@ let test_tcp_multiplexing () =
     >>= fun () ->
     let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
     let open Dns_forward.Config in
-    let config = Server.Set.of_list [
+    let servers = Server.Set.of_list [
       { Server.address = public_address; zones = Domain.Set.empty };
     ] in
+    let config = { servers; search = [] } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->
@@ -252,9 +255,37 @@ let test_forwarder_set = [
   "Local names resolve ok", `Quick, test_local_lookups;
 ]
 
+open Dns_forward.Config
+
+let config_examples = [
+  "nameserver 10.0.0.2\nnameserver 1.2.3.4#54\nsearch a b c",
+  { servers = Server.Set.of_list [
+    { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "10.0.0.2"); port = 53 }; zones = Domain.Set.empty };
+    { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "1.2.3.4"); port = 54 }; zones = Domain.Set.empty };
+    ]; search = [ "a"; "b"; "c" ]
+  };
+  "nameserver 10.0.0.2\n",
+  { servers = Server.Set.of_list [
+    { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "10.0.0.2"); port = 53 }; zones = Domain.Set.empty };
+    ]; search = []
+  };
+]
+
+let test_parse_config txt expected () =
+  match of_string txt with
+  | Result.Error (`Msg m) -> failwith m
+  | Result.Ok x ->
+    if compare expected x <> 0
+    then failwith ("failed to parse " ^ txt)
+
+let test_config = List.map (fun (txt, expected) ->
+  "DNS " ^ (String.escaped txt), `Quick, test_parse_config txt expected
+) config_examples
+
 let () =
   Alcotest.run "dns-forward" [
     "Test infrastructure", test_infra_set;
     "Test forwarding", test_forwarder_set;
     "Test protocols", test_protocol_set;
+    "Test config parsing", test_config;
   ]
