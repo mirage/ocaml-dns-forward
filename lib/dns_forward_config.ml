@@ -89,5 +89,30 @@ let to_string _ = failwith "unimplemented"
 let of_string _ = failwith "unimplemented"
 
 module Unix = struct
-  let of_resolv_conf _ = failwith "unimplemented"
+  let of_resolv_conf txt =
+    let open Dns.Resolvconf in
+    let lines = Astring.String.cuts ~sep:"\n" txt in
+    let config = List.rev @@ List.fold_left (fun acc x ->
+        match map_line x with
+        | None -> acc
+        | Some x ->
+          begin
+            try
+              KeywordValue.of_string x :: acc
+            with
+            | _ -> acc
+          end
+      ) [] lines in
+    let servers = List.fold_left (fun acc x -> match x with
+      | KeywordValue.Nameserver(ip, Some port) ->
+        Server.Set.add { Server.address = { Address.ip; port }; zones = Domain.Set.empty } acc
+      | KeywordValue.Nameserver(ip, None) ->
+        Server.Set.add { Server.address = { Address.ip; port = 53 }; zones = Domain.Set.empty } acc
+      | _ -> acc
+    ) Server.Set.empty config in
+    let search = List.fold_left (fun acc x -> match x with
+      | KeywordValue.Search names -> names @ acc
+      | _ -> acc
+    ) [] config |> List.rev in
+    Result.Ok { servers; search }
 end
