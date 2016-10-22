@@ -85,7 +85,7 @@ let test_forwarder_zone () =
       { Server.address = foo_address; zones = Domain.Set.add [ "foo" ] Domain.Set.empty };
       { Server.address = bar_address; zones = Domain.Set.empty }
     ] in
-    let config = { servers } in
+    let config = { servers; search = [] } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->
@@ -136,7 +136,7 @@ let test_local_lookups () =
     let servers = Server.Set.of_list [
       { Server.address = public_address; zones = Domain.Set.empty };
     ] in
-    let config = { servers } in
+    let config = { servers; search = [] } in
     let open Lwt.Infix in
     let local_names_cb question =
       let open Dns.Packet in
@@ -193,7 +193,7 @@ let test_tcp_multiplexing () =
     let servers = Server.Set.of_list [
       { Server.address = public_address; zones = Domain.Set.empty };
     ] in
-    let config = { servers } in
+    let config = { servers; search = [] } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->

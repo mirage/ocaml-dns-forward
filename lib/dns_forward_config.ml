@@ -78,9 +78,12 @@ end
 
 type t = {
   servers: Server.Set.t;
+  search: string list;
 } [@@deriving sexp]
 
-let compare a b = Server.Set.compare a.servers b.servers
+let compare a b =
+  let servers = Server.Set.compare a.servers b.servers in
+  if servers <> 0 then servers else Pervasives.compare a.search b.search
 
 let to_string _ = failwith "unimplemented"
 let of_string _ = failwith "unimplemented"

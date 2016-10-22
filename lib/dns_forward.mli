@@ -148,9 +148,10 @@ module Config: sig
   end
 
   type t = {
-    servers: Server.Set.t
+    servers: Server.Set.t; (** Upstream DNS servers *)
+    search: string list;   (** Ordered list of domains to search *)
   } [@@deriving sexp]
-  (** Upstream DNS servers *)
+  (** A DNS configuration *)
 
   include Comparable with type t := t
 

@@ -49,8 +49,8 @@ end
 
 type t = {
   servers: Server.Set.t;
+  search: string list;
 } [@@deriving sexp]
-(** Upstream DNS servers *)
 
 val of_string: string -> (t, [ `Msg of string ]) Result.result
 val to_string: t -> string
