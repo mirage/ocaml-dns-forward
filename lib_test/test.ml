@@ -275,8 +275,8 @@ let config_examples = [
   };
   String.concat "\n" [
     "# a pretend VPN zone with a private nameserver";
-    "zone mirage.io foo.com";
     "nameserver 1.2.3.4";
+    "zone mirage.io foo.com";
     "";
     "# a default nameserver";
     "nameserver 8.8.8.8";
