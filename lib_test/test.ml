@@ -2,7 +2,7 @@
 module Error = Dns_forward.Error.Infix
 
 let fresh_id =
-  let next = ref 0 in
+  let next = ref 1000 in
   fun () ->
     let this = !next in
     next := !next mod 0xffff;
@@ -210,6 +210,10 @@ let test_tcp_multiplexing () =
     let send_request () =
       Proto_client.rpc c request
       >>= fun response ->
+      (* Check the response has the correct transaction id *)
+      let request' = Dns.Packet.parse (Cstruct.to_bigarray request)
+      and response' = Dns.Packet.parse (Cstruct.to_bigarray response) in
+      Alcotest.(check int) "DNS.id" request'.Dns.Packet.id response'.Dns.Packet.id;
       parse_response response
       >>= fun ipv4 ->
       Alcotest.(check string) "IPv4" foo_public (Ipaddr.V4.to_string ipv4);
