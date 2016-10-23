@@ -59,7 +59,7 @@ let serve port filename =
   end else Lwt_main.run begin
     read_lines filename
     >>= fun lines ->
-    let all = String.concat "" lines in
+    let all = String.concat "\n" lines in
     match Config.of_string all with
     | Result.Error (`Msg m) -> Lwt.return (`Error(true, m))
     | Result.Ok config ->
