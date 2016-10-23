@@ -125,6 +125,8 @@ module Config: sig
     type t = string list
     (** A DNS domain e.g. [ "a"; "b" ] would be the domain a.b. *)
 
+    val to_string: t -> string
+
     include Comparable with type t := t
     module Set: Set.S with type elt = t
     module Map: Map.S with type key = t

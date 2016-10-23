@@ -59,26 +59,29 @@ let serve port filename =
   end else Lwt_main.run begin
     read_lines filename
     >>= fun lines ->
-    let all = String.concat "" lines in
-    let config = Config.t_of_sexp @@ Sexplib.Sexp.of_string all in
-    Resolver.Udp.create config
-    >>= fun udp_resolver ->
-    Server.Udp.create udp_resolver
-    >>= fun udp ->
-    Resolver.Tcp.create config
-    >>= fun tcp_resolver ->
-    Server.Tcp.create tcp_resolver
-    >>= fun tcp ->
-    let address = { Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
-    let t =
-      let open Error.Infix in
-      Server.Udp.serve ~address udp
-      >>= fun () ->
-      Server.Tcp.serve ~address tcp
-      >>= fun () ->
-      let t, _ = Lwt.task () in
-      t in
-    t >>= function
+    let all = String.concat "\n" lines in
+    match Config.of_string all with
     | Result.Error (`Msg m) -> Lwt.return (`Error(true, m))
-    | Result.Ok () -> Lwt.return (`Ok ())
+    | Result.Ok config ->
+      let open Lwt.Infix in
+      Resolver.Udp.create config
+      >>= fun udp_resolver ->
+      Server.Udp.create udp_resolver
+      >>= fun udp ->
+      Resolver.Tcp.create config
+      >>= fun tcp_resolver ->
+      Server.Tcp.create tcp_resolver
+      >>= fun tcp ->
+      let address = { Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
+      let t =
+        let open Error.Infix in
+        Server.Udp.serve ~address udp
+        >>= fun () ->
+        Server.Tcp.serve ~address tcp
+        >>= fun () ->
+        let t, _ = Lwt.task () in
+        t in
+      t >>= function
+      | Result.Error (`Msg m) -> Lwt.return (`Error(true, m))
+      | Result.Ok () -> Lwt.return (`Ok ())
   end

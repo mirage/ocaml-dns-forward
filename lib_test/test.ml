@@ -2,7 +2,7 @@
 module Error = Dns_forward.Error.Infix
 
 let fresh_id =
-  let next = ref 0 in
+  let next = ref 1000 in
   fun () ->
     let this = !next in
     next := !next mod 0xffff;
@@ -210,6 +210,10 @@ let test_tcp_multiplexing () =
     let send_request () =
       Proto_client.rpc c request
       >>= fun response ->
+      (* Check the response has the correct transaction id *)
+      let request' = Dns.Packet.parse (Cstruct.to_bigarray request)
+      and response' = Dns.Packet.parse (Cstruct.to_bigarray response) in
+      Alcotest.(check int) "DNS.id" request'.Dns.Packet.id response'.Dns.Packet.id;
       parse_response response
       >>= fun ipv4 ->
       Alcotest.(check string) "IPv4" foo_public (Ipaddr.V4.to_string ipv4);
@@ -268,6 +272,20 @@ let config_examples = [
   { servers = Server.Set.of_list [
     { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "10.0.0.2"); port = 53 }; zones = Domain.Set.empty };
     ]; search = []
+  };
+  String.concat "\n" [
+    "# a pretend VPN zone with a private nameserver";
+    "nameserver 1.2.3.4";
+    "zone mirage.io foo.com";
+    "";
+    "# a default nameserver";
+    "nameserver 8.8.8.8";
+  ], {
+    servers = Server.Set.of_list [
+      { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "8.8.8.8"); port = 53 }; zones = Domain.Set.empty };
+      { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "1.2.3.4"); port = 53 };
+        zones = Domain.Set.of_list [ [ "mirage"; "io" ]; [ "foo"; "com" ] ]};
+    ]; search = [];
   };
 ]
 

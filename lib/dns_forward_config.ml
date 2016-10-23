@@ -61,7 +61,7 @@ module Server = struct
 
     let compare (a: t) (b: t) =
       let address = Address.compare a.address b.address in
-      if address <> 0 then address else Domain.Set.compare a.zones a.zones
+      if address <> 0 then address else Domain.Set.compare a.zones b.zones
   end
   include M
   module Set = struct
