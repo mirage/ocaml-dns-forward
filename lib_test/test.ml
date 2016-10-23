@@ -269,6 +269,20 @@ let config_examples = [
     { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "10.0.0.2"); port = 53 }; zones = Domain.Set.empty };
     ]; search = []
   };
+  String.concat "\n" [
+    "# a pretend VPN zone with a private nameserver";
+    "zone mirage.io foo.com";
+    "nameserver 1.2.3.4";
+    "";
+    "# a default nameserver";
+    "nameserver 8.8.8.8";
+  ], {
+    servers = Server.Set.of_list [
+      { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "8.8.8.8"); port = 53 }; zones = Domain.Set.empty };
+      { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "1.2.3.4"); port = 53 };
+        zones = Domain.Set.of_list [ [ "mirage"; "io" ]; [ "foo"; "com" ] ]};
+    ]; search = [];
+  };
 ]
 
 let test_parse_config txt expected () =
