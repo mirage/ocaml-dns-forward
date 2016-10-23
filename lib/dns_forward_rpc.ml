@@ -143,6 +143,12 @@ module Client = struct
         (* The id whose scope is the link to the server *)
         Dns_forward_free_id.get t.free_ids
         >>= fun free_id ->
+        (* Copy the buffer since this function will be run in parallel with the
+           same buffer *)
+        let buffer =
+          let tmp = Cstruct.create (Cstruct.len buffer) in
+          Cstruct.blit buffer 0 tmp 0 (Cstruct.len buffer);
+          tmp in
         (* Rewrite the query id before forwarding *)
         Cstruct.BE.set_uint16 buffer 0 free_id;
         Log.debug (fun f -> f "mapping DNS id %d -> %d" client_id free_id);
