@@ -37,7 +37,12 @@ let test_server () =
     let address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 53 } in
     S.serve ~address s
     >>= fun () ->
-    Rpc.connect address
+    let expected_dst = ref false in
+    let message_cb ~src:_ ~dst:d ~buf:_ =
+      if Dns_forward.Config.Address.compare address d <> 0 then expected_dst := true;
+      Lwt.return_unit
+    in
+    Rpc.connect ~message_cb address
     >>= fun c ->
     let request = make_a_query (Dns.Name.of_string "foo") in
     Rpc.rpc c request
@@ -48,6 +53,7 @@ let test_server () =
     let open Lwt.Infix in
     Rpc.disconnect c
     >>= fun () ->
+    if not (!expected_dst) then failwith ("Expected destination address never seen in message_cb");
     Lwt.return (Result.Ok ())
   end with
   | Result.Ok () ->
@@ -204,7 +210,12 @@ let test_tcp_multiplexing () =
     let open Error in
     F.serve ~address:f_address f
     >>= fun () ->
-    Proto_client.connect f_address
+    let expected_dst = ref false in
+    let message_cb ~src:_ ~dst:d ~buf:_ =
+      if Dns_forward.Config.Address.compare f_address d <> 0 then expected_dst := true;
+      Lwt.return_unit
+    in
+    Proto_client.connect ~message_cb f_address
     >>= fun c ->
     let request = make_a_query (Dns.Name.of_string "foo") in
     let send_request () =
@@ -240,6 +251,7 @@ let test_tcp_multiplexing () =
     >>= fun () ->
     F.destroy f
     >>= fun () ->
+    if not (!expected_dst) then failwith ("Expected destination address never seen in message_cb");
     Lwt.return (Result.Ok ())
   end with
   | Result.Ok () ->

@@ -35,6 +35,7 @@ type flow = {
   r2l: Cstruct.t Lwt_sequence.t; (* pending data from right to left *)
   mutable r2l_closed: bool;
   r2l_c: unit Lwt_condition.t;
+  client_address: address;
   server_address: address;
 }
 
@@ -45,12 +46,15 @@ let openflow server_address =
   let r2l_c = Lwt_condition.create () in
   let l2r_closed = false in
   let r2l_closed = false in
-  { l2r; r2l; l2r_c; r2l_c; l2r_closed; r2l_closed; server_address }
+  let client_address = Ipaddr.V4 Ipaddr.V4.localhost, 32768 in
+  { l2r; r2l; l2r_c; r2l_c; l2r_closed; r2l_closed; client_address; server_address }
 
 let otherend flow =
   { l2r = flow.r2l; l2r_c = flow.r2l_c; r2l = flow.l2r; r2l_c = flow.l2r_c;
     l2r_closed = flow.r2l_closed; r2l_closed = flow.l2r_closed;
-    server_address = flow.server_address }
+    client_address = flow.server_address; server_address = flow.client_address }
+
+let getclientname flow = flow.client_address
 
 let read flow =
   let open Lwt.Infix in
