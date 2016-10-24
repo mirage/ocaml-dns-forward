@@ -68,15 +68,18 @@ module type S = Dns_forward_s.RESOLVER
 
 module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
 
+  type address = Dns_forward_config.Address.t
+  type message_cb = src:address -> dst:address -> buf:Cstruct.t -> unit Lwt.t
+
   type t = {
     connections: (Dns_forward_config.Server.t * Client.t) list;
     local_names_cb: (Dns.Packet.question -> Dns.Packet.rr list option Lwt.t);
     timeout: float;
   }
 
-  let create ?(local_names_cb=fun _ -> Lwt.return_none) ?(timeout=2.0) config =
+  let create ?(local_names_cb=fun _ -> Lwt.return_none) ?message_cb ?(timeout=2.0) config =
     Lwt_list.map_s (fun server ->
-      or_fail_msg @@ Client.connect server.Dns_forward_config.Server.address
+      or_fail_msg @@ Client.connect ?message_cb server.Dns_forward_config.Server.address
       >>= fun client ->
       Lwt.return (server, client)
     ) (Dns_forward_config.Server.Set.elements config.Dns_forward_config.servers)

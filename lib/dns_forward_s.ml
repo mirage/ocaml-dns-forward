@@ -64,8 +64,11 @@ end
 
 module type RESOLVER = sig
   type t
+  type address = Dns_forward_config.Address.t
+  type message_cb = src:address -> dst:address -> buf:Cstruct.t -> unit Lwt.t
   val create:
     ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
+    ?message_cb:message_cb ->
     ?timeout:float ->
     Dns_forward_config.t ->
     t Lwt.t
