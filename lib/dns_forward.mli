@@ -45,6 +45,10 @@ module Flow: sig
     val connect: ?read_buffer_size:int -> address -> flow Error.t
     (** [connect address] creates a connection to [address] and returns
         he connected flow. *)
+
+    val getclientname: flow -> address
+    (** Query the address the client is bound to *)
+
   end
   module type Server = sig
     type server
@@ -189,7 +193,10 @@ module Rpc: sig
       type address = Config.Address.t
       (** The address of the remote endpoint *)
 
-      val connect: address -> t Error.t
+      type message_cb = src:address -> dst:address -> buf:Cstruct.t -> unit Lwt.t
+      (** A callback called per message, which permits recording and analysis *)
+
+      val connect: ?message_cb:message_cb -> address -> t Error.t
       (** Connect to the remote server *)
 
       val rpc: t -> request -> response Error.t
@@ -251,8 +258,14 @@ module Resolver: sig
   module type S = sig
     type t
 
+    type address = Config.Address.t
+
+    type message_cb = src:address -> dst:address -> buf:Cstruct.t -> unit Lwt.t
+    (** A callback called per message, which permits recording and analysis *)
+
     val create:
       ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
+      ?message_cb:message_cb ->
       ?timeout:float ->
       Config.t -> t Lwt.t
     (** Construct a resolver given some configuration *)

@@ -104,6 +104,8 @@ module Tcp = struct
          errorf "%s: Lwt_unix.connect: caught %s" description (Printexc.to_string e)
       )
 
+  let getclientname t = getsockname "Tcp.getclientname" t.fd
+
   let read t = match t.fd with
     | None -> Lwt.return `Eof
     | Some fd ->
@@ -320,6 +322,8 @@ module Udp = struct
     (try Lwt_unix.bind fd (Lwt_unix.ADDR_INET(Unix.inet_addr_any, 0)) with _ -> ());
     let sockaddr = sockaddr_of_address address in
     Lwt.return (Result.Ok (of_fd ?read_buffer_size sockaddr address fd))
+
+  let getclientname t = getsockname "Udp.getclientname" t.fd
 
   let read t = match t.fd, t.already_read with
     | None, _ -> Lwt.return `Eof
