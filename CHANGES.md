@@ -1,3 +1,3 @@
-### trunk (unreleased)
+### 0.1.0 (2016-10-25)
 
-- Nothing to see here yet
+- Initial version
