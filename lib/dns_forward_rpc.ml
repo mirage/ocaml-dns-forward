@@ -35,7 +35,7 @@ module Client = struct
     type request = Cstruct.t
     type response = Cstruct.t
 
-    type message_cb = src:address -> dst:address -> buf:Cstruct.t -> unit Lwt.t
+    type message_cb = ?src:address -> ?dst:address -> buf:Cstruct.t -> unit -> unit Lwt.t
 
     type t = {
       address: address;
@@ -111,8 +111,6 @@ module Client = struct
           | None ->
             Sockets.connect (t.address.Dns_forward_config.Address.ip, t.address.Dns_forward_config.Address.port)
             >>= fun flow ->
-            let ip, port = Sockets.getclientname flow in
-            t.client_address <- { Dns_forward_config.Address.ip; port };
             let rw = Packet.connect flow in
             t.rw <- Some rw;
             Lwt.async (dispatcher t rw);
@@ -124,7 +122,7 @@ module Client = struct
       t.disconnect_on_idle <- (let open Lwt.Infix in Time.sleep 30. >>= fun () -> disconnect t);
       Lwt_result.return rw
 
-    let connect ?(message_cb = fun ~src:_ ~dst:_ ~buf:_ -> Lwt.return_unit) address =
+    let connect ?(message_cb = fun ?src:_ ?dst:_ ~buf:_ () -> Lwt.return_unit) address =
       let rw = None in
       let m = Lwt_mutex.create () in
       let disconnect_on_idle = Lwt.return_unit in
@@ -170,7 +168,7 @@ module Client = struct
           get_rw t
           >>= fun rw ->
           let open Lwt.Infix in
-          t.message_cb ~src:t.client_address ~dst:t.address ~buf:buffer
+          t.message_cb ~dst:t.address ~buf:buffer ()
           >>= fun () ->
           (* An existing connection to the server might have been closed by the server;
              therefore if we fail to write the request, reconnect and try once more. *)
@@ -186,7 +184,7 @@ module Client = struct
             get_rw t
             >>= fun rw ->
             let open Lwt.Infix in
-            t.message_cb ~src:t.client_address ~dst:t.address ~buf:buffer
+            t.message_cb ~dst:t.address ~buf:buffer ()
             >>= fun () ->
             Packet.write rw buffer
         end
@@ -200,7 +198,7 @@ module Client = struct
           th (* will be woken up by the dispatcher *)
           >>= fun buf ->
           let open Lwt.Infix in
-          t.message_cb ~src:t.address ~dst:t.client_address ~buf
+          t.message_cb ~src:t.address ~buf ()
           >>= fun () ->
           (* Rewrite the query id back to the original *)
           Cstruct.BE.set_uint16 buf 0 client_id;

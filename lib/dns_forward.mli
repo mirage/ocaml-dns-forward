@@ -45,10 +45,6 @@ module Flow: sig
     val connect: ?read_buffer_size:int -> address -> flow Error.t
     (** [connect address] creates a connection to [address] and returns
         he connected flow. *)
-
-    val getclientname: flow -> address
-    (** Query the address the client is bound to *)
-
   end
   module type Server = sig
     type server
@@ -195,8 +191,10 @@ module Rpc: sig
       type address = Config.Address.t
       (** The address of the remote endpoint *)
 
-      type message_cb = src:address -> dst:address -> buf:Cstruct.t -> unit Lwt.t
-      (** A callback called per message, which permits recording and analysis *)
+      type message_cb = ?src:address -> ?dst:address -> buf:Cstruct.t -> unit -> unit Lwt.t
+      (** A callback called per message, which permits recording and analysis.
+          If an address is unknown (e.g. it is selected by the kernel when routing
+          the packets) then the corresponding argument will be omitted *)
 
       val connect: ?message_cb:message_cb -> address -> t Error.t
       (** Connect to the remote server *)
@@ -262,8 +260,10 @@ module Resolver: sig
 
     type address = Config.Address.t
 
-    type message_cb = src:address -> dst:address -> buf:Cstruct.t -> unit Lwt.t
-    (** A callback called per message, which permits recording and analysis *)
+    type message_cb = ?src:address -> ?dst:address -> buf:Cstruct.t -> unit -> unit Lwt.t
+    (** A callback called per message, which permits recording and analysis.
+        If an address is unknown (e.g. it is selected by the kernel when routing
+        the packets) then the corresponding argument will be omitted *)
 
     val create:
       ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->

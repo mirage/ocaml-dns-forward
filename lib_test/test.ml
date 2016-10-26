@@ -38,8 +38,13 @@ let test_server () =
     S.serve ~address s
     >>= fun () ->
     let expected_dst = ref false in
-    let message_cb ~src:_ ~dst:d ~buf:_ =
-      if Dns_forward.Config.Address.compare address d <> 0 then expected_dst := true;
+    let message_cb ?src:_ ?dst:d ~buf:_ () =
+      ( match d with
+        | Some d ->
+          if Dns_forward.Config.Address.compare address d = 0 then expected_dst := true
+        | None ->
+          ()
+      );
       Lwt.return_unit
     in
     Rpc.connect ~message_cb address
@@ -211,8 +216,13 @@ let test_tcp_multiplexing () =
     F.serve ~address:f_address f
     >>= fun () ->
     let expected_dst = ref false in
-    let message_cb ~src:_ ~dst:d ~buf:_ =
-      if Dns_forward.Config.Address.compare f_address d <> 0 then expected_dst := true;
+    let message_cb ?src:_ ?dst ~buf:_ () =
+      ( match dst with
+        | Some d ->
+          if Dns_forward.Config.Address.compare f_address d = 0 then expected_dst := true
+        | None ->
+          ()
+      );
       Lwt.return_unit
     in
     Proto_client.connect ~message_cb f_address

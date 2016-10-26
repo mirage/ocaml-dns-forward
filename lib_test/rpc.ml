@@ -24,7 +24,7 @@ let string_of_address a = Ipaddr.to_string a.Config.Address.ip ^ ":" ^ (string_o
 
 type cb = request -> (response, [ `Msg of string ]) Result.result Lwt.t
 
-type message_cb = src:address -> dst:address -> buf:Cstruct.t -> unit Lwt.t
+type message_cb = ?src:address -> ?dst:address -> buf:Cstruct.t -> unit -> unit Lwt.t
 
 type t = {
   mutable cb: cb;
@@ -35,12 +35,12 @@ type t = {
 
 let rpc t request =
   let open Lwt.Infix in
-  t.message_cb ~src:t.client_address ~dst:t.server_address ~buf:request
+  t.message_cb ~src:t.client_address ~dst:t.server_address ~buf:request ()
   >>= fun () ->
   t.cb request
   >>= function
   | Result.Ok response ->
-    t.message_cb ~src:t.server_address ~dst:t.client_address ~buf:response
+    t.message_cb ~src:t.server_address ~dst:t.client_address ~buf:response ()
     >>= fun () ->
     Lwt.return (Result.Ok response)
   | Result.Error e ->
@@ -62,7 +62,7 @@ type server = {
 }
 let bound = Hashtbl.create 7
 
-let connect ?(message_cb = (fun ~src:_ ~dst:_ ~buf:_ -> Lwt.return_unit)) address =
+let connect ?(message_cb = (fun ?src:_ ?dst:_ ~buf:_ () -> Lwt.return_unit)) address =
   (* Use a fixed client address for now *)
   let client_address = { Config.Address.ip = Ipaddr.of_string_exn "1.2.3.4"; port = 32768 } in
   if Hashtbl.mem bound address then begin

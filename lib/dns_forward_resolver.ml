@@ -69,7 +69,7 @@ module type S = Dns_forward_s.RESOLVER
 module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
 
   type address = Dns_forward_config.Address.t
-  type message_cb = src:address -> dst:address -> buf:Cstruct.t -> unit Lwt.t
+  type message_cb = ?src:address -> ?dst:address -> buf:Cstruct.t -> unit -> unit Lwt.t
 
   type t = {
     connections: (Dns_forward_config.Server.t * Client.t) list;
