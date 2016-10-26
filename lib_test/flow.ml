@@ -54,8 +54,6 @@ let otherend flow =
     l2r_closed = flow.r2l_closed; r2l_closed = flow.l2r_closed;
     client_address = flow.server_address; server_address = flow.client_address }
 
-let getclientname flow = flow.client_address
-
 let read flow =
   let open Lwt.Infix in
   let rec wait () =

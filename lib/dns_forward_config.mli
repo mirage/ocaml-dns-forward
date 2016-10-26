@@ -20,6 +20,7 @@ module Address: sig
     ip: Ipaddr.t;
     port: int;
   }
+  val to_string: t -> string
 
   val compare: t -> t -> int
   module Set: Set.S with type elt = t

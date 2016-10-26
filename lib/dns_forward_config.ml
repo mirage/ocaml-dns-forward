@@ -28,6 +28,7 @@ module Address = struct
       if ip <> 0 then ip else Pervasives.compare a.port b.port
   end
   include M
+  let to_string { ip; port } = Printf.sprintf "%s:%d" (Ipaddr.to_string ip) port
   module Set = Set.Make(M)
   module Map = Map.Make(M)
 end
