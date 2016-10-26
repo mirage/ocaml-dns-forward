@@ -120,6 +120,8 @@ module Config: sig
     }
     (** The address of a DNS server *)
 
+    val to_string: t -> string
+
     include Comparable with type t := t
     module Set: Set.S with type elt = t
     module Map: Map.S with type key = t
