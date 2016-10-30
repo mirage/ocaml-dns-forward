@@ -16,7 +16,7 @@
  *)
 open Lwt.Infix
 
-type 'a t = ('a, [ `Msg of string ]) Dns_forward_lwt_result.t
+type 'a t = ('a, [ `Msg of string ]) Lwt_result.t
 
 module FromFlowError(Flow: V1_LWT.FLOW) = struct
   let (>>=) m f = m >>= function
@@ -27,4 +27,4 @@ end
 
 let errorf fmt = Printf.ksprintf (fun s -> Lwt.return (Result.Error (`Msg s))) fmt
 
-module Infix = Dns_forward_lwt_result.Infix
+module Infix = Lwt_result.Infix
