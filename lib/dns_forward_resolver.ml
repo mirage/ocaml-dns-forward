@@ -15,8 +15,6 @@
  *
  *)
 
-module Lwt_result = Dns_forward_lwt_result (* remove when this is available *)
-
 let src =
   let src = Logs.Src.create "Dns_forward" ~doc:"DNS resolution" in
   Logs.Src.set_level src (Some Logs.Debug);

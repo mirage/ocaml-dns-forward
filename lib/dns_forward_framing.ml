@@ -14,7 +14,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
-module Lwt_result = Dns_forward_lwt_result (* remove when this is available *)
 
 let src =
   let src = Logs.Src.create "Dns_forward" ~doc:"DNS framing" in
