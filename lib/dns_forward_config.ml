@@ -58,16 +58,19 @@ module Server = struct
     type t = {
       zones: Domain.Set.t;
       address: Address.t;
-      timeout: float option;
+      timeout_ms: int option;
       order: int;
     } [@@deriving sexp]
 
     let compare (a: t) (b: t) =
+      let zones = Domain.Set.compare a.zones b.zones in
       let address = Address.compare a.address b.address in
       let order = Pervasives.compare a.order b.order in
+      let timeout_ms = Pervasives.compare a.timeout_ms b.timeout_ms in
       if address <> 0 then address
+      else if zones <> 0 then zones
       else if order <> 0 then order
-      else Domain.Set.compare a.zones b.zones
+      else timeout_ms
   end
   include M
   module Set = struct
@@ -132,7 +135,7 @@ let of_string txt =
           (`Search (String.cuts ~sep:" " line)) :: acc
         end else if String.is_prefix ~affix:timeout_prefix line then begin
           let line = String.with_range ~first:(String.length timeout_prefix) line in
-          (`Timeout (float_of_string @@ String.trim ~drop:whitespace line)) :: acc
+          (`Timeout (int_of_string @@ String.trim ~drop:whitespace line)) :: acc
         end else if String.is_prefix ~affix:order_prefix line then begin
           let line = String.with_range ~first:(String.length order_prefix) line in
           (`Order (int_of_string @@ String.trim ~drop:whitespace line)) :: acc
@@ -144,9 +147,9 @@ let of_string txt =
         | _, timeout, order, `Zones zones -> zones, timeout, order, acc
         | zones, _, order, `Timeout timeout -> zones, Some timeout, order, acc
         | zones, timeout, _, `Order order -> zones, timeout, order, acc
-        | zones, timeout, order, `Nameserver (ip, port) ->
+        | zones, timeout_ms, order, `Nameserver (ip, port) ->
           let zones = List.map (String.cuts ~sep:"." ?rev:None ?empty:None) zones |> Domain.Set.of_list in
-          let server = { Server.address = { Address.ip; port }; zones; timeout; order } in
+          let server = { Server.address = { Address.ip; port }; zones; timeout_ms; order } in
           [], None, 0, { acc with servers = Server.Set.add server acc.servers }
         | _, _, _, `Search search ->
           zones, timeout, order, { acc with search }
@@ -159,7 +162,7 @@ let to_string t =
     (fun server acc ->
       [ nameserver_prefix ^ (Ipaddr.to_string server.Server.address.Address.ip) ^ "#" ^ (string_of_int server.Server.address.Address.port) ]
       @ (if server.Server.zones <> Domain.Set.empty then [ zone_prefix ^ (String.concat " " @@ List.map Domain.to_string @@ Domain.Set.elements server.Server.zones) ] else [])
-      @ (match server.Server.timeout with None -> [] | Some t -> [ timeout_prefix ^ (string_of_float t) ])
+      @ (match server.Server.timeout_ms with None -> [] | Some t -> [ timeout_prefix ^ (string_of_int t) ])
       @ [ order_prefix ^ (string_of_int server.Server.order) ]
       @ acc
     ) t.servers [] in
@@ -186,9 +189,9 @@ module Unix = struct
       ) [] lines in
     let servers = List.fold_left (fun acc x -> match x with
       | KeywordValue.Nameserver(ip, Some port) ->
-        Server.Set.add { Server.address = { Address.ip; port }; zones = Domain.Set.empty; timeout = None; order = 0 } acc
+        Server.Set.add { Server.address = { Address.ip; port }; zones = Domain.Set.empty; timeout_ms = None; order = 0 } acc
       | KeywordValue.Nameserver(ip, None) ->
-        Server.Set.add { Server.address = { Address.ip; port = 53 }; zones = Domain.Set.empty; timeout = None; order = 0 } acc
+        Server.Set.add { Server.address = { Address.ip; port = 53 }; zones = Domain.Set.empty; timeout_ms = None; order = 0 } acc
       | _ -> acc
     ) Server.Set.empty config in
     let search = List.fold_left (fun acc x -> match x with

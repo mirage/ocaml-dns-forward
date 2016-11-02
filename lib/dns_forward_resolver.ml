@@ -122,9 +122,9 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
           Log.debug (fun f -> f "forwarding to server %s:%d" (Ipaddr.to_string server.Server.address.Address.ip) server.Server.address.Address.port);
 
           let request = or_option @@ Client.rpc client buffer in
-          match server.Server.timeout with
+          match server.Server.timeout_ms with
           | None -> request
-          | Some t -> Lwt.pick [ (Time.sleep t >>= fun () -> Lwt.return None); request ] in
+          | Some t -> Lwt.pick [ (Time.sleep (float_of_int t /. 1000.0) >>= fun () -> Lwt.return None); request ] in
 
         (* Pick the first reply to come back, or timeout *)
         ( Lwt.pick @@ List.map rpc servers

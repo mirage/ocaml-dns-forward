@@ -85,7 +85,7 @@ let test_local_lookups () =
     let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
-      { Server.address = public_address; zones = Domain.Set.empty; timeout = None; order = 0 };
+      { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
     ] in
     let config = { servers; search = [] } in
     let open Lwt.Infix in
@@ -142,7 +142,7 @@ let test_tcp_multiplexing () =
     let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
-      { Server.address = public_address; zones = Domain.Set.empty; timeout = None; order = 0 };
+      { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
     ] in
     let config = { servers; search = [] } in
     let open Lwt.Infix in
@@ -226,7 +226,7 @@ let test_timeout () =
     let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
-      { Server.address = bar_address; zones = Domain.Set.empty; timeout = Some 0.; order = 0 }
+      { Server.address = bar_address; zones = Domain.Set.empty; timeout_ms = Some 0; order = 0 }
     ] in
     let config = { servers; search = [] } in
     let open Lwt.Infix in
@@ -278,8 +278,8 @@ let test_forwarder_zone () =
     let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
-      { Server.address = foo_address; zones = Domain.Set.add [ "foo" ] Domain.Set.empty; timeout = None; order = 0 };
-      { Server.address = bar_address; zones = Domain.Set.empty; timeout = None; order = 0 }
+      { Server.address = foo_address; zones = Domain.Set.add [ "foo" ] Domain.Set.empty; timeout_ms = None; order = 0 };
+      { Server.address = bar_address; zones = Domain.Set.empty; timeout_ms = None; order = 0 }
     ] in
     let config = { servers; search = [] } in
     let open Lwt.Infix in
@@ -335,30 +335,30 @@ open Dns_forward.Config
 let config_examples = [
   "nameserver 10.0.0.2\nnameserver 1.2.3.4#54\nsearch a b c",
   { servers = Server.Set.of_list [
-    { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "10.0.0.2"); port = 53 }; zones = Domain.Set.empty; timeout = None; order = 0 };
-    { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "1.2.3.4"); port = 54 }; zones = Domain.Set.empty; timeout = None; order = 0 };
+    { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "10.0.0.2"); port = 53 }; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
+    { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "1.2.3.4"); port = 54 }; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
     ]; search = [ "a"; "b"; "c" ]
   };
   "nameserver 10.0.0.2\n",
   { servers = Server.Set.of_list [
-    { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "10.0.0.2"); port = 53 }; zones = Domain.Set.empty; timeout = None; order = 0 };
+    { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "10.0.0.2"); port = 53 }; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
     ]; search = []
   };
   String.concat "\n" [
     "# a pretend VPN zone with a private nameserver";
     "nameserver 1.2.3.4";
     "zone mirage.io foo.com";
-    "timeout 5";
+    "timeout 5000";
     "order 1";
     "";
     "# a default nameserver";
     "nameserver 8.8.8.8";
   ], {
     servers = Server.Set.of_list [
-      { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "8.8.8.8"); port = 53 }; zones = Domain.Set.empty; timeout = None; order = 0; };
+      { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "8.8.8.8"); port = 53 }; zones = Domain.Set.empty; timeout_ms = None; order = 0; };
       { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "1.2.3.4"); port = 53 };
         zones = Domain.Set.of_list [ [ "mirage"; "io" ]; [ "foo"; "com" ] ];
-        timeout = None;
+        timeout_ms = Some 5000;
         order = 1;
       };
     ]; search = [];
