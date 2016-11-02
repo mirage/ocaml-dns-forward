@@ -237,17 +237,19 @@ module Server = struct
           let open Lwt_result.Infix in
           Packet.read rw
           >>= fun request ->
-          (* FIXME: need to run these in the background *)
-          let open Lwt.Infix in
-          cb request
-          >>= function
-          | Result.Error _ ->
-            loop ()
-          | Result.Ok response ->
-            let open Lwt_result.Infix in
-            Packet.write rw response
-            >>= fun () ->
-            loop () in
+          Lwt.async
+            (fun () ->
+              let open Lwt.Infix in
+              cb request
+              >>= function
+              | Result.Error _ ->
+                Lwt.return_unit
+              | Result.Ok response ->
+                Packet.write rw response
+                >>= fun _ ->
+                Lwt.return_unit
+            );
+          loop () in
         loop ()
         >>= function
         | Result.Error (`Msg m) ->
