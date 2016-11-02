@@ -20,8 +20,10 @@ module Make(Server: Rpc.Server.S): sig
   type t
   (** A DNS server for testing *)
 
-  val make: (string * Ipaddr.t) list -> t
-  (** Construct a server with a fixed set of name mappings *)
+  val make: ?delay:float -> (string * Ipaddr.t) list -> t
+  (** Construct a server with a fixed set of name mappings. If the ?delay
+      argument is provided then an artificial delay will be added before all
+      responses. *)
 
   val serve: address: Config.Address.t -> t -> unit Error.t
   (** Serve requests on the given IP and port forever *)
