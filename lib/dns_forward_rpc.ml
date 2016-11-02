@@ -238,8 +238,6 @@ module Server = struct
           Packet.read rw
           >>= fun request ->
           (* FIXME: need to run these in the background *)
-          (* FIXME: need to rewrite transaction IDs if the requests come from
-             different resolvers *)
           let open Lwt.Infix in
           cb request
           >>= function
