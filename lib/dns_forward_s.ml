@@ -67,7 +67,6 @@ module type RESOLVER = sig
   val create:
     ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
     ?message_cb:message_cb ->
-    ?timeout:float ->
     Dns_forward_config.t ->
     t Lwt.t
   val destroy: t -> unit Lwt.t
