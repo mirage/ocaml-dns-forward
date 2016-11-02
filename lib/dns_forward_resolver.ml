@@ -36,6 +36,8 @@ let is_in_domain name domain =
     trimmed_name = domain
   end
 
+module IntSet = Set.Make(struct type t = int let compare (a: int) (b: int) = compare a b end)
+
 let choose_servers config request =
   let open Dns.Packet in
   let open Dns_forward_config in
@@ -46,14 +48,19 @@ let choose_servers config request =
     let matching_servers = List.filter (fun server ->
       Domain.Set.fold (fun zone acc -> acc || (is_in_domain labels zone)) server.Server.zones false
     ) config in
-    begin match matching_servers with
-    | _ :: _ ->
-      (* If any of the configured domains match, send to these servers *)
-      [ matching_servers ]
-    | [] ->
-      (* Otherwise send to all servers with no match *)
-      [ List.filter (fun server -> server.Server.zones = Domain.Set.empty) config ]
-    end
+    let all = match matching_servers with
+      | _ :: _ ->
+        (* If any of the configured domains match, send to these servers *)
+        matching_servers
+      | [] ->
+        (* Otherwise send to all servers with no match *)
+        List.filter (fun server -> server.Server.zones = Domain.Set.empty) config in
+    (* Now we order by the order field *)
+    let orders = List.fold_left (fun set server -> IntSet.add server.Server.order set) IntSet.empty all in
+    List.map
+      (fun order ->
+        List.filter (fun server -> server.Server.order = order) all
+      ) (IntSet.elements orders)
   | _ -> [ [] ]
   end
 
