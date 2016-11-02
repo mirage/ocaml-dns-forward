@@ -55,14 +55,11 @@ module Client = struct
           match t with
           | { rw = Some rw; _ } as t ->
             t.rw <- None;
-            let tbl = Hashtbl.copy t.wakeners in
-            Hashtbl.clear t.wakeners;
             let error = Result.Error (`Msg "connection to server was closed") in
             Hashtbl.iter (fun id u ->
               Log.err (fun f -> f "disconnect: failing request with id %d" id);
-              Dns_forward_free_id.put t.free_ids id;
               Lwt.wakeup_later u error
-            ) tbl;
+            ) t.wakeners;
             Packet.close rw
           | _ -> Lwt.return_unit
         )
@@ -87,8 +84,6 @@ module Client = struct
             let client_id = response.Dns.Packet.id in
             if Hashtbl.mem t.wakeners client_id then begin
               let u = Hashtbl.find t.wakeners client_id in
-              Hashtbl.remove t.wakeners client_id;
-              Dns_forward_free_id.put t.free_ids client_id;
               Lwt.wakeup_later u (Result.Ok buffer)
             end else begin
               Log.err (fun f -> f "failed to find a wakener for id %d" client_id);
@@ -141,67 +136,73 @@ module Client = struct
            client. Since we are multiplexing requests to a single server we need
            to track used/unused ids on the link to the server and remember the
            mapping to the client. *)
-        let open Lwt.Infix in
+
         (* The id whose scope is the link to the client *)
         let client_id = request.Dns.Packet.id in
         (* The id whose scope is the link to the server *)
-        Dns_forward_free_id.get t.free_ids
-        >>= fun free_id ->
-        (* Copy the buffer since this function will be run in parallel with the
-           same buffer *)
-        let buffer =
-          let tmp = Cstruct.create (Cstruct.len buffer) in
-          Cstruct.blit buffer 0 tmp 0 (Cstruct.len buffer);
-          tmp in
-        (* Rewrite the query id before forwarding *)
-        Cstruct.BE.set_uint16 buffer 0 free_id;
-        Log.debug (fun f -> f "mapping DNS id %d -> %d" client_id free_id);
+        Dns_forward_free_id.with_id t.free_ids
+          (fun free_id ->
+            Lwt.finalize
+              (fun () ->
+                (* Copy the buffer since this function will be run in parallel with the
+                   same buffer *)
+                let buffer =
+                  let tmp = Cstruct.create (Cstruct.len buffer) in
+                  Cstruct.blit buffer 0 tmp 0 (Cstruct.len buffer);
+                  tmp in
+                (* Rewrite the query id before forwarding *)
+                Cstruct.BE.set_uint16 buffer 0 free_id;
+                Log.debug (fun f -> f "mapping DNS id %d -> %d" client_id free_id);
 
-        let th, u = Lwt.task () in
-        Hashtbl.replace t.wakeners free_id u;
+                let th, u = Lwt.task () in
+                Hashtbl.replace t.wakeners free_id u;
 
-        (* If we fail to connect, return the error *)
-        let open Lwt.Infix in
-        begin
-          let open Lwt_result.Infix in
-          get_rw t
-          >>= fun rw ->
-          let open Lwt.Infix in
-          t.message_cb ~dst:t.address ~buf:buffer ()
-          >>= fun () ->
-          (* An existing connection to the server might have been closed by the server;
-             therefore if we fail to write the request, reconnect and try once more. *)
-          Packet.write rw buffer
-          >>= function
-          | Result.Ok () ->
-            Lwt_result.return ()
-          | Result.Error (`Msg m) ->
-            Log.info (fun f -> f "caught %s writing request, attempting to reconnect" m);
-            disconnect t
-            >>= fun () ->
-            let open Lwt_result.Infix in
-            get_rw t
-            >>= fun rw ->
-            let open Lwt.Infix in
-            t.message_cb ~dst:t.address ~buf:buffer ()
-            >>= fun () ->
-            Packet.write rw buffer
-        end
-        >>= function
-        | Result.Error (`Msg m) ->
-          Hashtbl.remove t.wakeners free_id;
-          Dns_forward_free_id.put t.free_ids free_id;
-          Lwt_result.fail (`Msg m)
-        | Result.Ok () ->
-          let open Lwt_result.Infix in
-          th (* will be woken up by the dispatcher *)
-          >>= fun buf ->
-          let open Lwt.Infix in
-          t.message_cb ~src:t.address ~buf ()
-          >>= fun () ->
-          (* Rewrite the query id back to the original *)
-          Cstruct.BE.set_uint16 buf 0 client_id;
-          Lwt_result.return buf
+                (* If we fail to connect, return the error *)
+                let open Lwt.Infix in
+                begin
+                  let open Lwt_result.Infix in
+                  get_rw t
+                  >>= fun rw ->
+                  let open Lwt.Infix in
+                  t.message_cb ~dst:t.address ~buf:buffer ()
+                  >>= fun () ->
+                  (* An existing connection to the server might have been closed by the server;
+                     therefore if we fail to write the request, reconnect and try once more. *)
+                  Packet.write rw buffer
+                  >>= function
+                  | Result.Ok () ->
+                    Lwt_result.return ()
+                  | Result.Error (`Msg m) ->
+                    Log.info (fun f -> f "caught %s writing request, attempting to reconnect" m);
+                    disconnect t
+                    >>= fun () ->
+                    let open Lwt_result.Infix in
+                    get_rw t
+                    >>= fun rw ->
+                    let open Lwt.Infix in
+                    t.message_cb ~dst:t.address ~buf:buffer ()
+                    >>= fun () ->
+                    Packet.write rw buffer
+                end
+                >>= function
+                | Result.Error (`Msg m) ->
+                  Lwt_result.fail (`Msg m)
+                | Result.Ok () ->
+                  let open Lwt_result.Infix in
+                  th (* will be woken up by the dispatcher *)
+                  >>= fun buf ->
+                  let open Lwt.Infix in
+                  t.message_cb ~src:t.address ~buf ()
+                  >>= fun () ->
+                  (* Rewrite the query id back to the original *)
+                  Cstruct.BE.set_uint16 buf 0 client_id;
+                  Lwt_result.return buf
+            ) (fun () ->
+              (* This happens on cancel, disconnect, successful response *)
+              Hashtbl.remove t.wakeners free_id;
+              Lwt.return_unit
+            )
+        )
   end
 end
 
@@ -236,19 +237,19 @@ module Server = struct
           let open Lwt_result.Infix in
           Packet.read rw
           >>= fun request ->
-          (* FIXME: need to run these in the background *)
-          (* FIXME: need to rewrite transaction IDs if the requests come from
-             different resolvers *)
-          let open Lwt.Infix in
-          cb request
-          >>= function
-          | Result.Error _ ->
-            loop ()
-          | Result.Ok response ->
-            let open Lwt_result.Infix in
-            Packet.write rw response
-            >>= fun () ->
-            loop () in
+          Lwt.async
+            (fun () ->
+              let open Lwt.Infix in
+              cb request
+              >>= function
+              | Result.Error _ ->
+                Lwt.return_unit
+              | Result.Ok response ->
+                Packet.write rw response
+                >>= fun _ ->
+                Lwt.return_unit
+            );
+          loop () in
         loop ()
         >>= function
         | Result.Error (`Msg m) ->

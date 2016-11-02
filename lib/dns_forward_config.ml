@@ -58,6 +58,7 @@ module Server = struct
     type t = {
       zones: Domain.Set.t;
       address: Address.t;
+      timeout: float option;
     } [@@deriving sexp]
 
     let compare (a: t) (b: t) =
@@ -90,6 +91,7 @@ let compare a b =
 let nameserver_prefix = "nameserver "
 let search_prefix = "search "
 let zone_prefix = "zone "
+let timeout_prefix = "timeout "
 
 let of_string txt =
   let open Astring in
@@ -122,23 +124,25 @@ let of_string txt =
         end else if String.is_prefix ~affix:search_prefix line then begin
           let line = String.with_range ~first:(String.length search_prefix) line in
           (`Search (String.cuts ~sep:" " line)) :: acc
+        end else if String.is_prefix ~affix:timeout_prefix line then begin
+          let line = String.with_range ~first:(String.length timeout_prefix) line in
+          let whitespace = function ' ' | '\r' | '\n' | '\t' -> true | _ -> false in
+          (`Timeout (float_of_string @@ String.trim ~drop:whitespace line)) :: acc
         end else acc
       ) []
     (* Merge the zones and nameservers together *)
     |> List.fold_left
-      (fun (zones_opt, acc) line -> match zones_opt, line with
-        | _, `Zones zones -> (Some zones, acc)
-        | Some zones, `Nameserver (ip, port) ->
+      (fun (zones, timeout, acc) line -> match zones, timeout, line with
+        | _, timeout, `Zones zones -> zones, timeout, acc
+        | zones, _, `Timeout timeout -> zones, Some timeout, acc
+        | zones, timeout, `Nameserver (ip, port) ->
           let zones = List.map (String.cuts ~sep:"." ?rev:None ?empty:None) zones |> Domain.Set.of_list in
-          let server = { Server.address = { Address.ip; port }; zones } in
-          None, { acc with servers = Server.Set.add server acc.servers }
-        | None, `Nameserver (ip, port) ->
-          let server = { Server.address = { Address.ip; port }; zones = Domain.Set.empty } in
-          None, { acc with servers = Server.Set.add server acc.servers }
-        | _, `Search search ->
-          zones_opt, { acc with search }
-      ) (None, { servers = Server.Set.empty; search = [] })
-    |> snd |> fun x -> Result.Ok x
+          let server = { Server.address = { Address.ip; port }; zones; timeout } in
+          [], None, { acc with servers = Server.Set.add server acc.servers }
+        | _, _, `Search search ->
+          zones, timeout, { acc with search }
+      ) ([], None, { servers = Server.Set.empty; search = [] })
+    |> (fun (_, _, x) -> Result.Ok x)
   with e -> Result.Error (`Msg (Printf.sprintf "Failed to parse configuration: %s" (Printexc.to_string e)))
 
 let to_string t =
@@ -146,6 +150,7 @@ let to_string t =
     (fun server acc ->
       [ nameserver_prefix ^ (Ipaddr.to_string server.Server.address.Address.ip) ^ "#" ^ (string_of_int server.Server.address.Address.port) ]
       @ (if server.Server.zones <> Domain.Set.empty then [ zone_prefix ^ (String.concat " " @@ List.map Domain.to_string @@ Domain.Set.elements server.Server.zones) ] else [])
+      @ (match server.Server.timeout with None -> [] | Some t -> [ timeout_prefix ^ (string_of_float t) ])
       @ acc
     ) t.servers [] in
   let search = List.map
@@ -171,9 +176,9 @@ module Unix = struct
       ) [] lines in
     let servers = List.fold_left (fun acc x -> match x with
       | KeywordValue.Nameserver(ip, Some port) ->
-        Server.Set.add { Server.address = { Address.ip; port }; zones = Domain.Set.empty } acc
+        Server.Set.add { Server.address = { Address.ip; port }; zones = Domain.Set.empty; timeout = None } acc
       | KeywordValue.Nameserver(ip, None) ->
-        Server.Set.add { Server.address = { Address.ip; port = 53 }; zones = Domain.Set.empty } acc
+        Server.Set.add { Server.address = { Address.ip; port = 53 }; zones = Domain.Set.empty; timeout = None } acc
       | _ -> acc
     ) Server.Set.empty config in
     let search = List.fold_left (fun acc x -> match x with

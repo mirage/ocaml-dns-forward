@@ -21,9 +21,5 @@ type t
 val make: ?max_id:int -> unit -> t
 (** Construct a free set with the given maximum *)
 
-val get: t -> int Lwt.t
-(** Get a free id. This will block until there is an element available.
-    Caller must guarantee to call [put] on this id or else there will be a leak *)
-
-val put: t -> int -> unit
-(** Put the result of [get] back in the free set *)
+val with_id: t -> (int -> 'a Lwt.t) -> 'a Lwt.t
+(** [with_id t f] waits for an id to become free and then calls [f id] with it *)

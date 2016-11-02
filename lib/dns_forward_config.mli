@@ -39,8 +39,9 @@ end
 
 module Server: sig
   type t = {
-    zones: Domain.Set.t; (** use this server for these specific domains *)
+    zones: Domain.Set.t;
     address: Address.t;
+    timeout: float option;
   }
   (** A single upstream DNS server *)
 

@@ -62,6 +62,10 @@ let or_fail_msg m = m >>= function
   | Result.Error (`Msg m) -> Lwt.fail (Failure m)
   | Result.Ok x -> Lwt.return x
 
+let or_option m = m >>= function
+  | Result.Error _ -> Lwt.return None
+  | Result.Ok x -> Lwt.return (Some x)
+
 module type S = Dns_forward_s.RESOLVER
 
 module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
@@ -72,17 +76,16 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
   type t = {
     connections: (Dns_forward_config.Server.t * Client.t) list;
     local_names_cb: (Dns.Packet.question -> Dns.Packet.rr list option Lwt.t);
-    timeout: float;
   }
 
-  let create ?(local_names_cb=fun _ -> Lwt.return_none) ?message_cb ?(timeout=2.0) config =
+  let create ?(local_names_cb=fun _ -> Lwt.return_none) ?message_cb config =
     Lwt_list.map_s (fun server ->
       or_fail_msg @@ Client.connect ?message_cb server.Dns_forward_config.Server.address
       >>= fun client ->
       Lwt.return (server, client)
     ) (Dns_forward_config.Server.Set.elements config.Dns_forward_config.servers)
     >>= fun connections ->
-    Lwt.return { connections; local_names_cb; timeout }
+    Lwt.return { connections; local_names_cb }
 
   let destroy t =
     Lwt_list.iter_s (fun (_, c) -> Client.disconnect c) t.connections
@@ -117,12 +120,14 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
           let open Dns_forward_config in
           let _, client = List.find (fun (s, _) -> s = server) t.connections in
           Log.debug (fun f -> f "forwarding to server %s:%d" (Ipaddr.to_string server.Server.address.Address.ip) server.Server.address.Address.port);
-          or_fail_msg @@ Client.rpc client buffer
-          >>= fun reply ->
-          Lwt.return (Some reply) in
+
+          let request = or_option @@ Client.rpc client buffer in
+          match server.Server.timeout with
+          | None -> request
+          | Some t -> Lwt.pick [ (Time.sleep t >>= fun () -> Lwt.return None); request ] in
 
         (* Pick the first reply to come back, or timeout *)
-        ( Lwt.pick @@ (Time.sleep t.timeout >>= fun () -> Lwt.return None) :: (List.map rpc servers)
+        ( Lwt.pick @@ List.map rpc servers
           >>= function
           | None -> Lwt_result.fail (`Msg "no response within the timeout")
           | Some reply -> Lwt_result.return reply

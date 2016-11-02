@@ -70,66 +70,6 @@ module Time = struct
   let sleep = Lwt_unix.sleep
 end
 
-let test_forwarder_zone () =
-  Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
-  let module S = Server.Make(Rpc) in
-  let foo_public = "8.8.8.8" in
-  let foo_private = "192.168.1.1" in
-  (* a VPN mapping 'foo' to an internal ip *)
-  let foo_server = S.make [ "foo", Ipaddr.of_string_exn foo_private ] in
-  let foo_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 1 } in
-  (* a public server mapping 'foo' to a public ip *)
-  let bar_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
-  let bar_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 2 } in
-
-  let open Error in
-  match Lwt_main.run begin
-    S.serve ~address:foo_address foo_server
-    >>= fun () ->
-
-    S.serve ~address:bar_address bar_server
-    >>= fun () ->
-    (* a resolver which uses both servers *)
-    let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
-    let open Dns_forward.Config in
-    let servers = Server.Set.of_list [
-      { Server.address = foo_address; zones = Domain.Set.add [ "foo" ] Domain.Set.empty };
-      { Server.address = bar_address; zones = Domain.Set.empty }
-    ] in
-    let config = { servers; search = [] } in
-    let open Lwt.Infix in
-    R.create config
-    >>= fun r ->
-    let module F = Dns_forward.Server.Make(Rpc)(R) in
-    F.create r
-    >>= fun f ->
-    let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 3 } in
-    let open Error in
-    F.serve ~address:f_address f
-    >>= fun () ->
-    Rpc.connect f_address
-    >>= fun c ->
-    let request = make_a_query (Dns.Name.of_string "foo") in
-    Rpc.rpc c request
-    >>= fun response ->
-    parse_response response
-    >>= fun ipv4 ->
-    Alcotest.(check string) "IPv4" foo_private (Ipaddr.V4.to_string ipv4);
-    let open Lwt.Infix in
-    Rpc.disconnect c
-    >>= fun () ->
-    F.destroy f
-    >>= fun () ->
-    Lwt.return (Result.Ok ())
-  end with
-  | Result.Ok () ->
-    (* the disconnects and close should have removed all the connections: *)
-    Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
-    (* The server should have sent the query only to foo and not to bar *)
-    Alcotest.(check int) "foo_server queries" 1 (S.get_nr_queries foo_server);
-    Alcotest.(check int) "bar_server queries" 0 (S.get_nr_queries bar_server);
-  | Result.Error (`Msg m) -> failwith m
-
 let test_local_lookups () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   match Lwt_main.run begin
@@ -145,7 +85,7 @@ let test_local_lookups () =
     let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
-      { Server.address = public_address; zones = Domain.Set.empty };
+      { Server.address = public_address; zones = Domain.Set.empty; timeout = None };
     ] in
     let config = { servers; search = [] } in
     let open Lwt.Infix in
@@ -202,7 +142,7 @@ let test_tcp_multiplexing () =
     let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
-      { Server.address = public_address; zones = Domain.Set.empty };
+      { Server.address = public_address; zones = Domain.Set.empty; timeout = None };
     ] in
     let config = { servers; search = [] } in
     let open Lwt.Infix in
@@ -268,6 +208,114 @@ let test_tcp_multiplexing () =
     Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   | Result.Error (`Msg m) -> failwith m
 
+let test_timeout () =
+  Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+  let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
+  let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
+  let module S = Server.Make(Proto_server) in
+  let foo_public = "8.8.8.8" in
+  (* a public server mapping 'foo' to a public ip *)
+  let bar_server = S.make ~delay:60. [ "foo", Ipaddr.of_string_exn foo_public ] in
+  let bar_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 8 } in
+
+  let open Error in
+  match Lwt_main.run begin
+    S.serve ~address:bar_address bar_server
+    >>= fun () ->
+    (* a resolver which uses both servers *)
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
+    let open Dns_forward.Config in
+    let servers = Server.Set.of_list [
+      { Server.address = bar_address; zones = Domain.Set.empty; timeout = Some 0. }
+    ] in
+    let config = { servers; search = [] } in
+    let open Lwt.Infix in
+    R.create config
+    >>= fun r ->
+    let request = make_a_query (Dns.Name.of_string "foo") in
+    let request =
+      R.answer request r
+      >>= function
+      | Result.Ok _ -> failwith "timeout test expected a timeout"
+      | Result.Error _ -> Lwt.return true in
+    let timeout =
+      Lwt_unix.sleep 5.
+      >>= fun () ->
+      Lwt.return false in
+    Lwt.pick [ request; timeout ]
+    >>= fun ok ->
+    if not ok then failwith "server timeout was not respected";
+    R.destroy r
+    >>= fun () ->
+    Lwt.return (Result.Ok ())
+  end with
+  | Result.Ok () ->
+    (* the disconnects and close should have removed all the connections: *)
+    Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+    Alcotest.(check int) "bar_server queries" 1 (S.get_nr_queries bar_server);
+  | Result.Error (`Msg m) -> failwith m
+
+let test_forwarder_zone () =
+  Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+  let module S = Server.Make(Rpc) in
+  let foo_public = "8.8.8.8" in
+  let foo_private = "192.168.1.1" in
+  (* a VPN mapping 'foo' to an internal ip *)
+  let foo_server = S.make [ "foo", Ipaddr.of_string_exn foo_private ] in
+  let foo_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 1 } in
+  (* a public server mapping 'foo' to a public ip *)
+  let bar_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
+  let bar_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 2 } in
+
+  let open Error in
+  match Lwt_main.run begin
+    S.serve ~address:foo_address foo_server
+    >>= fun () ->
+
+    S.serve ~address:bar_address bar_server
+    >>= fun () ->
+    (* a resolver which uses both servers *)
+    let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
+    let open Dns_forward.Config in
+    let servers = Server.Set.of_list [
+      { Server.address = foo_address; zones = Domain.Set.add [ "foo" ] Domain.Set.empty; timeout = None };
+      { Server.address = bar_address; zones = Domain.Set.empty; timeout = None }
+    ] in
+    let config = { servers; search = [] } in
+    let open Lwt.Infix in
+    R.create config
+    >>= fun r ->
+    let module F = Dns_forward.Server.Make(Rpc)(R) in
+    F.create r
+    >>= fun f ->
+    let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 3 } in
+    let open Error in
+    F.serve ~address:f_address f
+    >>= fun () ->
+    Rpc.connect f_address
+    >>= fun c ->
+    let request = make_a_query (Dns.Name.of_string "foo") in
+    Rpc.rpc c request
+    >>= fun response ->
+    parse_response response
+    >>= fun ipv4 ->
+    Alcotest.(check string) "IPv4" foo_private (Ipaddr.V4.to_string ipv4);
+    let open Lwt.Infix in
+    Rpc.disconnect c
+    >>= fun () ->
+    F.destroy f
+    >>= fun () ->
+    Lwt.return (Result.Ok ())
+  end with
+  | Result.Ok () ->
+    (* the disconnects and close should have removed all the connections: *)
+    Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+    (* The server should have sent the query only to foo and not to bar *)
+    Alcotest.(check int) "foo_server queries" 1 (S.get_nr_queries foo_server);
+    Alcotest.(check int) "bar_server queries" 0 (S.get_nr_queries bar_server);
+  | Result.Error (`Msg m) -> failwith m
+
+
 let test_infra_set = [
   "Server responds correctly", `Quick, test_server;
 ]
@@ -277,6 +325,7 @@ let test_protocol_set = [
 ]
 
 let test_forwarder_set = [
+  "Per-server timeouts", `Quick, test_timeout;
   "Zone config respected", `Quick, test_forwarder_zone;
   "Local names resolve ok", `Quick, test_local_lookups;
 ]
@@ -286,27 +335,30 @@ open Dns_forward.Config
 let config_examples = [
   "nameserver 10.0.0.2\nnameserver 1.2.3.4#54\nsearch a b c",
   { servers = Server.Set.of_list [
-    { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "10.0.0.2"); port = 53 }; zones = Domain.Set.empty };
-    { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "1.2.3.4"); port = 54 }; zones = Domain.Set.empty };
+    { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "10.0.0.2"); port = 53 }; zones = Domain.Set.empty; timeout = None };
+    { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "1.2.3.4"); port = 54 }; zones = Domain.Set.empty; timeout = None };
     ]; search = [ "a"; "b"; "c" ]
   };
   "nameserver 10.0.0.2\n",
   { servers = Server.Set.of_list [
-    { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "10.0.0.2"); port = 53 }; zones = Domain.Set.empty };
+    { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "10.0.0.2"); port = 53 }; zones = Domain.Set.empty; timeout = None };
     ]; search = []
   };
   String.concat "\n" [
     "# a pretend VPN zone with a private nameserver";
     "nameserver 1.2.3.4";
     "zone mirage.io foo.com";
+    "timeout 5";
     "";
     "# a default nameserver";
     "nameserver 8.8.8.8";
   ], {
     servers = Server.Set.of_list [
-      { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "8.8.8.8"); port = 53 }; zones = Domain.Set.empty };
+      { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "8.8.8.8"); port = 53 }; zones = Domain.Set.empty; timeout = None };
       { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "1.2.3.4"); port = 53 };
-        zones = Domain.Set.of_list [ [ "mirage"; "io" ]; [ "foo"; "com" ] ]};
+        zones = Domain.Set.of_list [ [ "mirage"; "io" ]; [ "foo"; "com" ] ];
+        timeout = None
+      };
     ]; search = [];
   };
 ]

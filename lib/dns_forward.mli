@@ -138,6 +138,7 @@ module Config: sig
     type t = {
       zones: Domain.Set.t; (** use this server for these specific domains *)
       address: Address.t;
+      timeout: float option; (** a specific timeout to use for this server *)
     }
     (** A single upstream DNS server. If [zones = []] then the server can handle
         all queries; otherwise [zones] is a list of domains that this server
@@ -268,7 +269,6 @@ module Resolver: sig
     val create:
       ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
       ?message_cb:message_cb ->
-      ?timeout:float ->
       Config.t -> t Lwt.t
     (** Construct a resolver given some configuration *)
 
@@ -278,9 +278,9 @@ module Resolver: sig
     val answer: Cstruct.t -> t -> Cstruct.t Error.t
     (** Process a query by first checking whether the name can be satisfied
         locally via the [local_names_cb] and failing that, sending it to
-        upstream servers according to the resolver configuration. By default
-        the call will timeout after a few seconds, but this can be customised
-        via the [timeout] optional argument. *)
+        upstream servers according to the resolver configuration. The call
+        will block forever if no server with a timeout is chosen; the client
+        should be prepared to timeout and cancel the thread. *)
   end
 
   module Make(Client: Rpc.Client.S)(Time: V1_LWT.TIME): S
