@@ -42,6 +42,7 @@ module Server: sig
     zones: Domain.Set.t;
     address: Address.t;
     timeout: float option;
+    order: int;
   }
   (** A single upstream DNS server *)
 
