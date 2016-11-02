@@ -49,12 +49,12 @@ let choose_servers config request =
     begin match matching_servers with
     | _ :: _ ->
       (* If any of the configured domains match, send to these servers *)
-      matching_servers
+      [ matching_servers ]
     | [] ->
       (* Otherwise send to all servers with no match *)
-      List.filter (fun server -> server.Server.zones = Domain.Set.empty) config
+      [ List.filter (fun server -> server.Server.zones = Domain.Set.empty) config ]
     end
-  | _ -> []
+  | _ -> [ [] ]
   end
 
 let or_fail_msg m = m >>= function
@@ -114,9 +114,8 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
         let buf = marshal buf pkt in
         Lwt_result.return (Cstruct.of_bigarray buf)
       | None ->
-        let servers = choose_servers (List.map fst t.connections) request in
-        (* send the request to all upstream servers *)
-        let rpc server =
+
+        let one_rpc server =
           let open Dns_forward_config in
           let _, client = List.find (fun (s, _) -> s = server) t.connections in
           Log.debug (fun f -> f "forwarding to server %s:%d" (Ipaddr.to_string server.Server.address.Address.ip) server.Server.address.Address.port);
@@ -126,12 +125,16 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
           | None -> request
           | Some t -> Lwt.pick [ (Time.sleep (float_of_int t /. 1000.0) >>= fun () -> Lwt.return None); request ] in
 
-        (* Pick the first reply to come back, or timeout *)
-        ( Lwt.pick @@ List.map rpc servers
-          >>= function
-          | None -> Lwt_result.fail (`Msg "no response within the timeout")
-          | Some reply -> Lwt_result.return reply
-        )
+        (* Send the request to all relevant servers in groups. If no response
+           is heard from a group, then we proceed to the next group *)
+        Lwt_list.fold_left_s
+          (fun acc servers -> match acc with
+            | None -> Lwt.pick @@ List.map one_rpc servers
+            | r -> Lwt.return r (* got a reply already *)
+          ) None (choose_servers (List.map fst t.connections) request)
+        >>= function
+        | None -> Lwt_result.fail (`Msg "no response within the timeout")
+        | Some reply -> Lwt_result.return reply
       end
     | None ->
       Lwt_result.fail (`Msg "failed to parse request")
