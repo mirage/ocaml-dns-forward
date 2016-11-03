@@ -99,6 +99,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
     Lwt.return { connections; local_names_cb; cache }
 
   let destroy t =
+    Cache.destroy t.cache;
     Lwt_list.iter_s (fun (_, c) -> Client.disconnect c) t.connections
 
   let answer buffer t =

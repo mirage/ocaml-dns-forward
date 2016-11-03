@@ -23,6 +23,9 @@ module Make(Time: V1_LWT.TIME): sig
   (** Create an empty cache. If [?max_bindings] is provided then the cache will
       not contain more than the given number of bindings. *)
 
+  val destroy: t -> unit
+  (** Destroy the cache and free associated resources *)
+
   val answer: t -> Dns.Packet.question -> Dns.Packet.rr list option
   (** Look up the answer to the given question in the cache. Returns None if
       the cache has no binding. *)

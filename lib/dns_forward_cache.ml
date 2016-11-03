@@ -48,6 +48,10 @@ module Make(Time: V1_LWT.TIME) = struct
       t.cache <- QMap.remove question t.cache;
     end
 
+  let destroy t =
+    QMap.iter (fun _ { timeout; _ } -> Lwt.cancel timeout) t.cache;
+    t.cache <- QMap.empty
+
   let insert t question answers =
     (* If there's an existing binding we'll remove it now *)
     remove t question;
