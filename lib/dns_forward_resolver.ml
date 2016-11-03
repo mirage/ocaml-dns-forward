@@ -83,6 +83,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
   type t = {
     connections: (Dns_forward_config.Server.t * Client.t) list;
     local_names_cb: (Dns.Packet.question -> Dns.Packet.rr list option Lwt.t);
+    cache: Dns_forward_cache.t;
   }
 
   let create ?(local_names_cb=fun _ -> Lwt.return_none) ?message_cb config =
@@ -92,7 +93,8 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
       Lwt.return (server, client)
     ) (Dns_forward_config.Server.Set.elements config.Dns_forward_config.servers)
     >>= fun connections ->
-    Lwt.return { connections; local_names_cb }
+    let cache = Dns_forward_cache.make () in
+    Lwt.return { connections; local_names_cb; cache }
 
   let destroy t =
     Lwt_list.iter_s (fun (_, c) -> Client.disconnect c) t.connections
@@ -100,49 +102,58 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
   let answer buffer t =
     let len = Cstruct.len buffer in
     let buf = Dns.Buf.of_cstruct buffer in
+    let open Dns.Packet in
     match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
-    | Some request ->
-      let open Dns.Packet in
-      (* First see if we have a local answer to this question *)
-      let questions = request.questions in
-      begin match questions with
-      | [ question ] ->
-        t.local_names_cb question
-      | _ ->
-        Lwt.return_none
-      end >>= fun local ->
-      begin match local with
-      | Some answers ->
-        let id = request.id in
-        let detail = request.detail in
-        let authorities = [] and additionals = [] in
-        let pkt = { id; detail; questions; answers; authorities; additionals } in
-        let buf = Dns.Buf.create 1024 in
-        let buf = marshal buf pkt in
-        Lwt_result.return (Cstruct.of_bigarray buf)
-      | None ->
+    | Some ({ questions = [ question ]; _ } as request) ->
+      begin
+        begin match Dns_forward_cache.answer t.cache question with
+          | Some x -> Lwt.return (Some x)
+          | None ->
+            (* Next see if we have a local answer to this question *)
+            t.local_names_cb question
+        end >>= function
+        | Some answers ->
+          let id = request.id in
+          let detail = request.detail in
+          let questions = request.questions in
+          let authorities = [] and additionals = [] in
+          let pkt = { id; detail; questions; answers; authorities; additionals } in
+          let buf = Dns.Buf.create 1024 in
+          let buf = marshal buf pkt in
+          Lwt_result.return (Cstruct.of_bigarray buf)
+        | None ->
 
-        let one_rpc server =
-          let open Dns_forward_config in
-          let _, client = List.find (fun (s, _) -> s = server) t.connections in
-          Log.debug (fun f -> f "forwarding to server %s:%d" (Ipaddr.to_string server.Server.address.Address.ip) server.Server.address.Address.port);
+          let one_rpc server =
+            let open Dns_forward_config in
+            let _, client = List.find (fun (s, _) -> s = server) t.connections in
+            Log.debug (fun f -> f "forwarding to server %s:%d" (Ipaddr.to_string server.Server.address.Address.ip) server.Server.address.Address.port);
 
-          let request = or_option @@ Client.rpc client buffer in
-          match server.Server.timeout_ms with
-          | None -> request
-          | Some t -> Lwt.pick [ (Time.sleep (float_of_int t /. 1000.0) >>= fun () -> Lwt.return None); request ] in
+            let request = or_option @@ Client.rpc client buffer in
+            match server.Server.timeout_ms with
+            | None -> request
+            | Some t -> Lwt.pick [ (Time.sleep (float_of_int t /. 1000.0) >>= fun () -> Lwt.return None); request ] in
 
-        (* Send the request to all relevant servers in groups. If no response
-           is heard from a group, then we proceed to the next group *)
-        Lwt_list.fold_left_s
-          (fun acc servers -> match acc with
-            | None -> Lwt.pick @@ List.map one_rpc servers
-            | r -> Lwt.return r (* got a reply already *)
-          ) None (choose_servers (List.map fst t.connections) request)
-        >>= function
-        | None -> Lwt_result.fail (`Msg "no response within the timeout")
-        | Some reply -> Lwt_result.return reply
+          (* Send the request to all relevant servers in groups. If no response
+             is heard from a group, then we proceed to the next group *)
+          Lwt_list.fold_left_s
+            (fun acc servers -> match acc with
+              | None -> Lwt.pick @@ List.map one_rpc servers
+              | r -> Lwt.return r (* got a reply already *)
+            ) None (choose_servers (List.map fst t.connections) request)
+          >>= function
+          | None -> Lwt_result.fail (`Msg "no response within the timeout")
+          | Some reply ->
+            (* Add the data to the cache for next time *)
+            let len = Cstruct.len buffer in
+            let buf = Dns.Buf.of_cstruct buffer in
+            begin match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
+            | Some { answers; _ } -> Dns_forward_cache.insert t.cache question answers
+            | _ -> ()
+            end;
+            Lwt_result.return reply
       end
+    | Some { questions = _; _} ->
+      Lwt_result.fail (`Msg "cannot handle DNS packets where len(questions)<>1")
     | None ->
       Lwt_result.fail (`Msg "failed to parse request")
 
