@@ -26,7 +26,7 @@ let parse_response response =
   match pkt.Dns.Packet.answers with
   | [ { Dns.Packet.rdata = Dns.Packet.A ipv4; _ } ] ->
     Lwt.return (Result.Ok ipv4)
-  | _ -> Lwt.return (Result.Error (`Msg "failed to find answers"))
+  | xs -> Lwt.return (Result.Error (`Msg (Printf.sprintf "failed to find answers: [ %s ]" (String.concat "; " (List.map Dns.Packet.rr_to_string xs)))))
 
 let test_server () =
   match Lwt_main.run begin
