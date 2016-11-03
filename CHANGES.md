@@ -1,3 +1,7 @@
+### 0.4.0 (2016-11-03)
+
+- Cache results for up to the TTL
+
 ### 0.3.0 (2016-11-03)
 
 - Require lwt >= 2.6.0 for Lwt_results
