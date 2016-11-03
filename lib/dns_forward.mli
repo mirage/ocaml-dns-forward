@@ -138,7 +138,8 @@ module Config: sig
     type t = {
       zones: Domain.Set.t; (** use this server for these specific domains *)
       address: Address.t;
-      timeout: float option; (** a specific timeout to use for this server *)
+      timeout_ms: int option; (** a specific timeout to use for this server in milliseconds *)
+      order: int; (** lower means earlier *)
     }
     (** A single upstream DNS server. If [zones = []] then the server can handle
         all queries; otherwise [zones] is a list of domains that this server
