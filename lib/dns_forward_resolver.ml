@@ -150,7 +150,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
             let len = Cstruct.len buffer in
             let buf = Dns.Buf.of_cstruct buffer in
             begin match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
-            | Some { answers; _ } -> Cache.insert t.cache question answers
+            | Some { answers; _ } -> if answers <> [] then Cache.insert t.cache question answers
             | _ -> ()
             end;
             Lwt_result.return reply
