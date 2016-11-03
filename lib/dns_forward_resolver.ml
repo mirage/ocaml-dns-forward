@@ -147,8 +147,8 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
           | None -> Lwt_result.fail (`Msg "no response within the timeout")
           | Some reply ->
             (* Add the data to the cache for next time *)
-            let len = Cstruct.len buffer in
-            let buf = Dns.Buf.of_cstruct buffer in
+            let len = Cstruct.len reply in
+            let buf = Dns.Buf.of_cstruct reply in
             begin match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
             | Some { answers; _ } -> if answers <> [] then Cache.insert t.cache question answers
             | _ -> ()
