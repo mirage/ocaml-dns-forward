@@ -26,7 +26,7 @@ let parse_response response =
   match pkt.Dns.Packet.answers with
   | [ { Dns.Packet.rdata = Dns.Packet.A ipv4; _ } ] ->
     Lwt.return (Result.Ok ipv4)
-  | _ -> Lwt.return (Result.Error (`Msg "failed to find answers"))
+  | xs -> Lwt.return (Result.Error (`Msg (Printf.sprintf "failed to find answers: [ %s ]" (String.concat "; " (List.map Dns.Packet.rr_to_string xs)))))
 
 let test_server () =
   match Lwt_main.run begin
@@ -36,7 +36,7 @@ let test_server () =
     (* The virtual address we run our server on: *)
     let address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 53 } in
     S.serve ~address s
-    >>= fun () ->
+    >>= fun _ ->
     let expected_dst = ref false in
     let message_cb ?src:_ ?dst:d ~buf:_ () =
       ( match d with
@@ -81,7 +81,7 @@ let test_local_lookups () =
     let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 4 } in
     let open Error in
     S.serve ~address:public_address public_server
-    >>= fun () ->
+    >>= fun _ ->
     let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
@@ -138,7 +138,7 @@ let test_tcp_multiplexing () =
     let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 6 } in
     let open Error in
     S.serve ~address:public_address public_server
-    >>= fun () ->
+    >>= fun _ ->
     let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
@@ -221,7 +221,7 @@ let test_timeout () =
   let open Error in
   match Lwt_main.run begin
     S.serve ~address:bar_address bar_server
-    >>= fun () ->
+    >>= fun _ ->
     (* a resolver which uses both servers *)
     let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
     let open Dns_forward.Config in
@@ -255,6 +255,51 @@ let test_timeout () =
     Alcotest.(check int) "bar_server queries" 1 (S.get_nr_queries bar_server);
   | Result.Error (`Msg m) -> failwith m
 
+let test_cache () =
+  Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+  let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
+  let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
+  let module S = Server.Make(Proto_server) in
+  let foo_public = "8.8.8.8" in
+  (* a public server mapping 'foo' to a public ip *)
+  let bar_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
+  let bar_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 12 } in
+
+  let open Error in
+  match Lwt_main.run begin
+    S.serve ~address:bar_address bar_server
+    >>= fun server ->
+    (* a resolver which uses both servers *)
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
+    let open Dns_forward.Config in
+    let servers = Server.Set.of_list [
+      { Server.address = bar_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 }
+    ] in
+    let config = { servers; search = [] } in
+    let open Lwt.Infix in
+    R.create config
+    >>= fun r ->
+    let request = make_a_query (Dns.Name.of_string "foo") in
+    R.answer request r
+    >>= function
+    | Result.Error _ -> failwith "failed initial lookup"
+    | Result.Ok _ ->
+    S.shutdown server
+    >>= fun () ->
+    R.answer request r
+    >>= function
+    | Result.Error (`Msg m) -> failwith ("failed cached lookup: " ^ m)
+    | Result.Ok _ ->
+    R.destroy r
+    >>= fun () ->
+    Lwt.return (Result.Ok ())
+  end with
+  | Result.Ok () ->
+    (* the disconnects and close should have removed all the connections: *)
+    Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+    Alcotest.(check int) "bar_server queries" 1 (S.get_nr_queries bar_server);
+  | Result.Error (`Msg m) -> failwith m
+
 (* One slow private server, one fast public server with different bindings for
    the same name. The order field guarantees that we take the answer from the
    slow private server. *)
@@ -275,9 +320,9 @@ let test_order () =
   let open Error in
   match Lwt_main.run begin
     S.serve ~address:public_address public_server
-    >>= fun () ->
+    >>= fun _ ->
     S.serve ~address:private_address private_server
-    >>= fun () ->
+    >>= fun _ ->
 
     (* a resolver which uses both servers *)
     let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
@@ -324,10 +369,10 @@ let test_forwarder_zone () =
   let open Error in
   match Lwt_main.run begin
     S.serve ~address:foo_address foo_server
-    >>= fun () ->
+    >>= fun _ ->
 
     S.serve ~address:bar_address bar_server
-    >>= fun () ->
+    >>= fun _ ->
     (* a resolver which uses both servers *)
     let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
     let open Dns_forward.Config in
@@ -383,6 +428,7 @@ let test_forwarder_set = [
   "Zone config respected", `Quick, test_forwarder_zone;
   "Local names resolve ok", `Quick, test_local_lookups;
   "Server order", `Quick, test_order;
+  "Caching", `Quick, test_cache;
 ]
 
 open Dns_forward.Config

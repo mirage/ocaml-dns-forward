@@ -14,26 +14,22 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
-open Dns_forward
 
-module Make(Server: Rpc.Server.S): sig
+module Make(Time: V1_LWT.TIME): sig
   type t
-  (** A DNS server for testing *)
+  (** A cache of DNS answers *)
 
-  val make: ?delay:float -> (string * Ipaddr.t) list -> t
-  (** Construct a server with a fixed set of name mappings. If the ?delay
-      argument is provided then an artificial delay will be added before all
-      responses. *)
+  val make: ?max_bindings:int -> unit -> t
+  (** Create an empty cache. If [?max_bindings] is provided then the cache will
+      not contain more than the given number of bindings. *)
 
-  type server
-  (** A running server *)
+  val destroy: t -> unit
+  (** Destroy the cache and free associated resources *)
 
-  val serve: address: Config.Address.t -> t -> server Error.t
-  (** Serve requests on the given IP and port forever *)
+  val answer: t -> Dns.Packet.question -> Dns.Packet.rr list option
+  (** Look up the answer to the given question in the cache. Returns None if
+      the cache has no binding. *)
 
-  val shutdown: server -> unit Lwt.t
-  (** Shutdown the running server *)
-
-  val get_nr_queries: t -> int
-  (** Return the number of queries which reached this server *)
+  val insert: t -> Dns.Packet.question -> Dns.Packet.rr list -> unit
+  (** Insert the answer to the question into the cache *)
 end
