@@ -25,8 +25,14 @@ module Make(Server: Rpc.Server.S): sig
       argument is provided then an artificial delay will be added before all
       responses. *)
 
-  val serve: address: Config.Address.t -> t -> unit Error.t
+  type server
+  (** A running server *)
+
+  val serve: address: Config.Address.t -> t -> server Error.t
   (** Serve requests on the given IP and port forever *)
+
+  val shutdown: server -> unit Lwt.t
+  (** Shutdown the running server *)
 
   val get_nr_queries: t -> int
   (** Return the number of queries which reached this server *)

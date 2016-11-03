@@ -60,12 +60,16 @@ module Make(Server: Rpc.Server.S) = struct
     | None ->
       Lwt.return (Result.Error (`Msg "failed to parse request"))
 
+  type server = Server.server
+
   let serve ~address t =
     let open Error in
     Server.bind address
     >>= fun server ->
     Server.listen server (fun buf -> answer buf t)
     >>= fun () ->
-    Lwt.return (Result.Ok ())
+    Lwt.return (Result.Ok server)
+
+  let shutdown = Server.shutdown
 
 end
