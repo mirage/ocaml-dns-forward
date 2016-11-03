@@ -77,13 +77,15 @@ module type S = Dns_forward_s.RESOLVER
 
 module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
 
+  module Cache = Dns_forward_cache.Make(Time)
+
   type address = Dns_forward_config.Address.t
   type message_cb = ?src:address -> ?dst:address -> buf:Cstruct.t -> unit -> unit Lwt.t
 
   type t = {
     connections: (Dns_forward_config.Server.t * Client.t) list;
     local_names_cb: (Dns.Packet.question -> Dns.Packet.rr list option Lwt.t);
-    cache: Dns_forward_cache.t;
+    cache: Cache.t;
   }
 
   let create ?(local_names_cb=fun _ -> Lwt.return_none) ?message_cb config =
@@ -93,7 +95,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
       Lwt.return (server, client)
     ) (Dns_forward_config.Server.Set.elements config.Dns_forward_config.servers)
     >>= fun connections ->
-    let cache = Dns_forward_cache.make () in
+    let cache = Cache.make () in
     Lwt.return { connections; local_names_cb; cache }
 
   let destroy t =
@@ -106,7 +108,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
     match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
     | Some ({ questions = [ question ]; _ } as request) ->
       begin
-        begin match Dns_forward_cache.answer t.cache question with
+        begin match Cache.answer t.cache question with
           | Some x -> Lwt.return (Some x)
           | None ->
             (* Next see if we have a local answer to this question *)
@@ -147,7 +149,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
             let len = Cstruct.len buffer in
             let buf = Dns.Buf.of_cstruct buffer in
             begin match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
-            | Some { answers; _ } -> Dns_forward_cache.insert t.cache question answers
+            | Some { answers; _ } -> Cache.insert t.cache question answers
             | _ -> ()
             end;
             Lwt_result.return reply

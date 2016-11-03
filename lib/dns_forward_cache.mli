@@ -15,16 +15,18 @@
  *
  *)
 
-type t
-(** A cache of DNS answers *)
+module Make(Time: V1_LWT.TIME): sig
+  type t
+  (** A cache of DNS answers *)
 
-val make: ?max_bindings:int -> unit -> t
-(** Create an empty cache. If [?max_bindings] is provided then the cache will
-    not contain more than the given number of bindings. *)
+  val make: ?max_bindings:int -> unit -> t
+  (** Create an empty cache. If [?max_bindings] is provided then the cache will
+      not contain more than the given number of bindings. *)
 
-val answer: t -> Dns.Packet.question -> Dns.Packet.rr list option
-(** Look up the answer to the given question in the cache. Returns None if
-    the cache has no binding. *)
+  val answer: t -> Dns.Packet.question -> Dns.Packet.rr list option
+  (** Look up the answer to the given question in the cache. Returns None if
+      the cache has no binding. *)
 
-val insert: t -> Dns.Packet.question -> Dns.Packet.rr list -> unit
-(** Insert the answer to the question into the cache *)
+  val insert: t -> Dns.Packet.question -> Dns.Packet.rr list -> unit
+  (** Insert the answer to the question into the cache *)
+end
