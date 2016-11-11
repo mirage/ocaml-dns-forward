@@ -117,7 +117,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
         end >>= function
         | Some answers ->
           let id = request.id in
-          let detail = request.detail in
+          let detail = { request.detail with Dns.Packet.qr = Dns.Packet.Response } in
           let questions = request.questions in
           let authorities = [] and additionals = [] in
           let pkt = { id; detail; questions; answers; authorities; additionals } in
