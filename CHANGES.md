@@ -1,3 +1,8 @@
+### 0.5.0 (2016-11-11)
+
+- Cache and local names callback: return packets of type
+  "response" rather than "request"
+
 ### 0.4.0 (2016-11-03)
 
 - Cache results for up to the TTL
