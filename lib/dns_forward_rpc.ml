@@ -95,7 +95,7 @@ module Client = struct
               with Invalid_argument _ ->
                 Log.warn (fun f -> f "%s %04x: response arrived for DNS request just after disconnection" (to_string t) client_id)
             end else begin
-              Log.err (fun f -> f "%s %04x: failed to find a wakener" (to_string t) client_id);
+              Log.debug (fun f -> f "%s %04x: no wakener: it was probably cancelled" (to_string t) client_id);
             end;
             loop ()
           end
