@@ -1,3 +1,7 @@
+### 0.5.1 (2016-11-11)
+
+- Silence some of the spammy logging
+
 ### 0.5.0 (2016-11-11)
 
 - Cache and local names callback: return packets of type
