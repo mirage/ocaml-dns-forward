@@ -17,7 +17,7 @@
 
 let src =
   let src = Logs.Src.create "Dns_forward" ~doc:"DNS over SOCKETS" in
-  Logs.Src.set_level src (Some Logs.Debug);
+  Logs.Src.set_level src (Some Logs.Info);
   src
 
 module Log = (val Logs.src_log src : Logs.LOG)
