@@ -23,10 +23,15 @@ let make_a_query name =
 
 let parse_response response =
   let pkt = Dns.Packet.parse (Cstruct.to_bigarray response) in
-  match pkt.Dns.Packet.answers with
-  | [ { Dns.Packet.rdata = Dns.Packet.A ipv4; _ } ] ->
-    Lwt.return (Result.Ok ipv4)
-  | xs -> Lwt.return (Result.Error (`Msg (Printf.sprintf "failed to find answers: [ %s ]" (String.concat "; " (List.map Dns.Packet.rr_to_string xs)))))
+  match pkt.Dns.Packet.detail with
+  | { Dns.Packet.qr = Dns.Packet.Query; _ } ->
+    Lwt.return (Result.Error (`Msg "parsed a response which was actually a query in disguise"))
+  | { Dns.Packet.qr = Dns.Packet.Response; _ } ->
+    begin match pkt.Dns.Packet.answers with
+    | [ { Dns.Packet.rdata = Dns.Packet.A ipv4; _ } ] ->
+      Lwt.return (Result.Ok ipv4)
+    | xs -> Lwt.return (Result.Error (`Msg (Printf.sprintf "failed to find answers: [ %s ]" (String.concat "; " (List.map Dns.Packet.rr_to_string xs)))))
+    end
 
 let test_server () =
   match Lwt_main.run begin

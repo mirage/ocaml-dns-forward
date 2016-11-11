@@ -49,6 +49,7 @@ module Make(Server: Rpc.Server.S) = struct
             Lwt.return (Result.Error (`Msg "no mapping for name"))
           | Some v4 ->
             let answers = [ { name = q_name; cls = RR_IN; flush = false; ttl = 0l; rdata = A v4 } ] in
+            let detail = { detail with Dns.Packet.qr = Dns.Packet.Response } in
             let pkt = { Dns.Packet.id; detail; questions = request.questions; authorities=[]; additionals; answers } in
             let buf = Dns.Buf.create 1024 in
             let buf = marshal buf pkt in
