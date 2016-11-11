@@ -57,8 +57,12 @@ module Client = struct
             t.rw <- None;
             let error = Result.Error (`Msg "connection to server was closed") in
             Hashtbl.iter (fun id u ->
-              Log.err (fun f -> f "disconnect: failing request with id %d" id);
-              Lwt.wakeup_later u error
+              Log.info (fun f -> f "disconnect: failing request with id %d" id);
+              (* It's possible that the response just arrived but hasn't been
+                 processed by the client thread *)
+              try Lwt.wakeup_later u error
+              with Invalid_argument _ ->
+                Log.warn (fun f -> f "disconnect: response for DNS request id %d just arrived in time" id)
             ) t.wakeners;
             Packet.close rw
           | _ -> Lwt.return_unit
@@ -84,7 +88,10 @@ module Client = struct
             let client_id = response.Dns.Packet.id in
             if Hashtbl.mem t.wakeners client_id then begin
               let u = Hashtbl.find t.wakeners client_id in
-              Lwt.wakeup_later u (Result.Ok buffer)
+              (* It's possible that disconnect has already failed the thread *)
+              try Lwt.wakeup_later u (Result.Ok buffer)
+              with Invalid_argument _ ->
+                Log.warn (fun f -> f "response arrived for DNS request id %d just after disconnection" client_id)
             end else begin
               Log.err (fun f -> f "failed to find a wakener for id %d" client_id);
             end;
