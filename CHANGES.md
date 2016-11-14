@@ -1,3 +1,8 @@
+### 0.6.0 (2016-11-14)
+
+- If a single server fails, don't cancel all other resolution
+  attempts.
+
 ### 0.5.1 (2016-11-11)
 
 - Silence some of the spammy logging
