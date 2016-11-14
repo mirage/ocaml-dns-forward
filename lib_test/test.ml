@@ -213,6 +213,55 @@ let test_tcp_multiplexing () =
     Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   | Result.Error (`Msg m) -> failwith m
 
+(* One good one bad server should behave like the good server *)
+let test_good_bad_server () =
+  Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+  match Lwt_main.run begin
+    let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
+    let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
+    let module S = Server.Make(Proto_server) in
+    let foo_public = "8.8.8.8" in
+    (* a public server mapping 'foo' to a public ip *)
+    let public_server = S.make ~delay:0.1 [ "foo", Ipaddr.of_string_exn foo_public ] in
+    let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 12 } in
+    let open Error in
+    S.serve ~address:public_address public_server
+    >>= fun _ ->
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
+    let open Dns_forward.Config in
+    let bad_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 999 } in
+    (* Forward to a good server and a bad server, both with timeouts. The request to
+       the bad request should fail fast but the good server should be given up to
+       the timeout to respond *)
+    let servers = Server.Set.of_list [
+      { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 };
+      { Server.address = bad_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 };
+    ] in
+    let config = { servers; search = [] } in
+    let open Lwt.Infix in
+    R.create config
+    >>= fun r ->
+    let request = make_a_query (Dns.Name.of_string "foo") in
+    let request =
+      R.answer request r
+      >>= function
+      | Result.Ok _ -> Lwt.return_true
+      | Result.Error _ -> failwith "test_good_bad_server timeout: did the failure overtake the success?" in
+    let timeout =
+      Lwt_unix.sleep 5.
+      >>= fun () ->
+      Lwt.return false in
+    Lwt.pick [ request; timeout ]
+    >>= fun ok ->
+    if not ok then failwith "test_good_bad_server hit timeout";
+    R.destroy r
+    >>= fun () ->
+    Lwt.return (Result.Ok ())
+  end with
+  | Result.Ok () ->
+    Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+  | Result.Error (`Msg m) -> failwith m
+
 let test_timeout () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
@@ -434,6 +483,7 @@ let test_forwarder_set = [
   "Local names resolve ok", `Quick, test_local_lookups;
   "Server order", `Quick, test_order;
   "Caching", `Quick, test_cache;
+  "Tolerate bad server", `Quick, test_good_bad_server;
 ]
 
 open Dns_forward.Config

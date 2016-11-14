@@ -126,11 +126,14 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
           Lwt_result.return (Cstruct.of_bigarray buf)
         | None ->
 
+          (* Possible outcomes are:
+             - Some <result>: candidate for returning to the client
+             - None: timeout
+             - failure: probably a network error *)
           let one_rpc server =
             let open Dns_forward_config in
             let _, client = List.find (fun (s, _) -> s = server) t.connections in
             Log.debug (fun f -> f "forwarding to server %s:%d" (Ipaddr.to_string server.Server.address.Address.ip) server.Server.address.Address.port);
-
             let request = or_option @@ Client.rpc client buffer in
             match server.Server.timeout_ms with
             | None -> request
@@ -140,7 +143,26 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
              is heard from a group, then we proceed to the next group *)
           Lwt_list.fold_left_s
             (fun acc servers -> match acc with
-              | None -> Lwt.pick @@ List.map one_rpc servers
+              | None ->
+                let result_t, result_u = Lwt.task () in
+                let all = List.map (fun server ->
+                  one_rpc server
+                  >>= function
+                  | Some result ->
+                    (* first positive response becomes the result *)
+                    (try Lwt.wakeup_later result_u (Some result) with Invalid_argument _ -> ());
+                    Lwt.return_unit
+                  | None -> Lwt.return_unit
+                ) servers in
+                (* Wait until either a positive result or all threads have quit *)
+                let all_quit = Lwt.catch (fun () -> Lwt.join all >>= fun () -> Lwt.return_none) (fun _ -> Lwt.return_none) in
+                Lwt.pick [ all_quit; result_t ]
+                >>= fun _ ->
+                (* If we have a result, return it *)
+                begin match Lwt.state result_t with
+                | Lwt.Return x -> Lwt.return x
+                | _ -> Lwt.return_none
+                end
               | r -> Lwt.return r (* got a reply already *)
             ) None (choose_servers (List.map fst t.connections) request)
           >>= function
