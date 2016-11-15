@@ -1,3 +1,10 @@
+### 0.7.0 (2016-11-15)
+
+- Fix race where a timeout could mark an id as free and an
+  old answer to the wrong question could be confused with
+  the answer we're expecting
+- Minimise amount of transaction id re-use
+
 ### 0.6.0 (2016-11-14)
 
 - If a single server fails, don't cancel all other resolution
