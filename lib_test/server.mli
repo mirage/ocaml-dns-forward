@@ -20,10 +20,11 @@ module Make(Server: Rpc.Server.S): sig
   type t
   (** A DNS server for testing *)
 
-  val make: ?delay:float -> (string * Ipaddr.t) list -> t
+  val make: ?delay:float -> ?simulate_bad_question:bool -> (string * Ipaddr.t) list -> t
   (** Construct a server with a fixed set of name mappings. If the ?delay
       argument is provided then an artificial delay will be added before all
-      responses. *)
+      responses. If ?simulate_bad_question is true then the responses will contain
+      a bad question, as could happen if a packet with an old id turned up.*)
 
   type server
   (** A running server *)
@@ -36,4 +37,5 @@ module Make(Server: Rpc.Server.S): sig
 
   val get_nr_queries: t -> int
   (** Return the number of queries which reached this server *)
+
 end
