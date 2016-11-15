@@ -17,13 +17,17 @@
 open Dns_forward
 module Error = Error.Infix
 
+let bad_question = Dns.Packet.make_question Dns.Packet.Q_A (Dns.Name.of_string "this.is.a.bad.question.")
+
 module Make(Server: Rpc.Server.S) = struct
   type t = {
     names: (string * Ipaddr.t) list;
     mutable nr_queries: int;
     delay: float;
+    mutable simulate_bad_question: bool;
   }
-  let make ?(delay=0.) names = { names; nr_queries = 0; delay }
+  let make ?(delay=0.) ?(simulate_bad_question = false) names =
+    { names; nr_queries = 0; delay; simulate_bad_question }
 
   let get_nr_queries { nr_queries; _ } = nr_queries
 
@@ -50,7 +54,10 @@ module Make(Server: Rpc.Server.S) = struct
           | Some v4 ->
             let answers = [ { name = q_name; cls = RR_IN; flush = false; ttl = 0l; rdata = A v4 } ] in
             let detail = { detail with Dns.Packet.qr = Dns.Packet.Response } in
-            let pkt = { Dns.Packet.id; detail; questions = request.questions; authorities=[]; additionals; answers } in
+            let questions = match t.simulate_bad_question with
+              | true -> [ bad_question ]
+              | false -> request.questions in
+            let pkt = { Dns.Packet.id; detail; questions; authorities=[]; additionals; answers } in
             let buf = Dns.Buf.create 1024 in
             let buf = marshal buf pkt in
             Lwt.return (Result.Ok (Cstruct.of_bigarray buf))

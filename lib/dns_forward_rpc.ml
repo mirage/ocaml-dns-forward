@@ -41,7 +41,7 @@ module Client = struct
       mutable client_address: address;
       mutable rw: Packet.t option;
       mutable disconnect_on_idle: unit Lwt.t;
-      wakeners: (int, (Cstruct.t, [ `Msg of string ]) Result.result Lwt.u) Hashtbl.t;
+      wakeners: (int, Dns.Packet.question * ((Cstruct.t, [ `Msg of string ]) Result.result Lwt.u)) Hashtbl.t;
       m: Lwt_mutex.t;
       free_ids: Dns_forward_free_id.t;
       message_cb: message_cb;
@@ -58,8 +58,11 @@ module Client = struct
           | { rw = Some rw; _ } as t ->
             t.rw <- None;
             let error = Result.Error (`Msg (to_string t ^ ": connection to server was closed")) in
-            Hashtbl.iter (fun id u ->
-              Log.info (fun f -> f "%s %04x: disconnect: failing request" (to_string t) id);
+            Hashtbl.iter (fun id (question, u) ->
+              Log.info (fun f -> f "%s %04x: disconnect: failing request for question %s"
+                (to_string t) id
+                (Dns.Packet.question_to_string question)
+              );
               (* It's possible that the response just arrived but hasn't been
                  processed by the client thread *)
               try Lwt.wakeup_later u error
@@ -83,22 +86,30 @@ module Client = struct
         | Result.Ok buffer ->
           let buf = Dns.Buf.of_cstruct buffer in
           begin match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 (Cstruct.len buffer)) with
-          | None ->
-            Log.err (fun f -> f "%s: dispatcher failed to parse response" (to_string t));
-            Lwt.fail (Failure "failed to parse response")
-          | Some response ->
+          | Some ({ Dns.Packet.questions = [ question ]; _ } as response) ->
             let client_id = response.Dns.Packet.id in
             if Hashtbl.mem t.wakeners client_id then begin
-              let u = Hashtbl.find t.wakeners client_id in
-              (* It's possible that disconnect has already failed the thread *)
-              try Lwt.wakeup_later u (Result.Ok buffer)
-              with Invalid_argument _ ->
-                Log.warn (fun f -> f "%s %04x: response arrived for DNS request just after disconnection" (to_string t) client_id)
+              let expected_question, u = Hashtbl.find t.wakeners client_id in
+              if expected_question <> question then begin
+                Log.warn (fun f -> f "%s %04x: response arrived for a different question: expected %s <> got %s"
+                  (to_string t) client_id
+                  (Dns.Packet.question_to_string expected_question)
+                  (Dns.Packet.question_to_string question)
+                )
+              end else begin
+                (* It's possible that disconnect has already failed the thread *)
+                try Lwt.wakeup_later u (Result.Ok buffer)
+                with Invalid_argument _ ->
+                  Log.warn (fun f -> f "%s %04x: response arrived for DNS request just after disconnection" (to_string t) client_id)
+              end
             end else begin
               Log.debug (fun f -> f "%s %04x: no wakener: it was probably cancelled" (to_string t) client_id);
             end;
             loop ()
-          end
+          | _ ->
+            Log.err (fun f -> f "%s: dispatcher failed to parse response" (to_string t));
+            Lwt.fail (Failure "failed to parse response")
+        end
       in
       Lwt.catch loop
         (fun e ->
@@ -137,10 +148,7 @@ module Client = struct
     let rpc (t: t) buffer =
       let buf = Dns.Buf.of_cstruct buffer in
       match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 (Cstruct.len buffer)) with
-      | None ->
-        Log.err (fun f -> f "%s: rpc: failed to parse request" (to_string t));
-        Lwt_result.fail (`Msg (to_string t ^ ":failed to parse request"))
-      | Some request ->
+      | Some ({ Dns.Packet.questions = [ question ]; _ } as request) ->
         (* Note: the received request id is scoped to the connection with the
            client. Since we are multiplexing requests to a single server we need
            to track used/unused ids on the link to the server and remember the
@@ -164,7 +172,7 @@ module Client = struct
                 Log.debug (fun f -> f "%s mapping DNS id %d -> %d" (to_string t) client_id free_id);
 
                 let th, u = Lwt.task () in
-                Hashtbl.replace t.wakeners free_id u;
+                Hashtbl.replace t.wakeners free_id (question, u);
 
                 (* If we fail to connect, return the error *)
                 let open Lwt.Infix in
@@ -212,6 +220,9 @@ module Client = struct
               Lwt.return_unit
             )
         )
+    | _ ->
+      Log.err (fun f -> f "%s: rpc: failed to parse request" (to_string t));
+      Lwt_result.fail (`Msg (to_string t ^ ":failed to parse request"))
   end
 end
 
