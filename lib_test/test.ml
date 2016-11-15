@@ -583,6 +583,13 @@ let test_config = List.map (fun (txt, expected) ->
 ) config_examples
 
 let () =
+  Logs.set_reporter (Logs_fmt.reporter ());
+  Lwt.async_exception_hook := (fun exn ->
+    Logs.err (fun f -> f "Lwt.async failure %s: %s"
+      (Printexc.to_string exn)
+      (Printexc.get_backtrace ())
+    )
+  );
   Alcotest.run "dns-forward" [
     "Test infrastructure", test_infra_set;
     "Test forwarding", test_forwarder_set;
