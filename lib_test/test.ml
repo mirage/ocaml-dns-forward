@@ -198,8 +198,8 @@ let test_tcp_multiplexing () =
         first
         >>= fun () ->
         rest in
-    (* Run 5 threads each sending 100 requests *)
-    par (fun () -> seq send_request 100) 5
+    (* Run 5 threads each sending 1000 requests *)
+    par (fun () -> seq send_request 1000) 5
     >>= fun () ->
     let open Lwt.Infix in
     Proto_client.disconnect c
