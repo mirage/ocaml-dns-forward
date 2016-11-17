@@ -133,7 +133,6 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
           let one_rpc server =
             let open Dns_forward_config in
             let _, client = List.find (fun (s, _) -> s = server) t.connections in
-            Log.debug (fun f -> f "forwarding to server %s:%d" (Ipaddr.to_string server.Server.address.Address.ip) server.Server.address.Address.port);
             let request = or_option @@ Client.rpc client buffer in
             match server.Server.timeout_ms with
             | None -> request
