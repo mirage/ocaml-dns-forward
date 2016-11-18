@@ -33,6 +33,8 @@ let read_lines filename =
       | Unix.Unix_error(Unix.ENOENT, _, _) as e ->
         Logs.err (fun f -> f "failed to find file %s" filename);
         Lwt.fail e
+      | e ->
+        Lwt.fail e
       )
 
 module Time = struct
