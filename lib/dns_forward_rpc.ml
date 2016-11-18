@@ -81,7 +81,7 @@ module Client = struct
         Packet.read rw
         >>= function
         | Result.Error (`Msg m) ->
-          Log.info (fun f -> f "%s: dispatcher shutting down: %s" (to_string t) m);
+          Log.debug (fun f -> f "%s: dispatcher shutting down: %s" (to_string t) m);
           disconnect t
         | Result.Ok buffer ->
           let buf = Dns.Buf.of_cstruct buffer in
