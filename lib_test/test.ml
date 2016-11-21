@@ -26,6 +26,8 @@ let parse_response response =
   match pkt.Dns.Packet.detail with
   | { Dns.Packet.qr = Dns.Packet.Query; _ } ->
     Lwt.return (Result.Error (`Msg "parsed a response which was actually a query in disguise"))
+  | { Dns.Packet.ra = false; _ } ->
+    Lwt.return (Result.Error (`Msg "parsed a response which had the recursion available bit cleared"))
   | { Dns.Packet.qr = Dns.Packet.Response; _ } ->
     begin match pkt.Dns.Packet.answers with
     | [ { Dns.Packet.rdata = Dns.Packet.A ipv4; _ } ] ->
@@ -392,7 +394,9 @@ let test_cache () =
     R.answer request r
     >>= function
     | Result.Error (`Msg m) -> failwith ("failed cached lookup: " ^ m)
-    | Result.Ok _ ->
+    | Result.Ok response ->
+    parse_response response
+    >>= fun _ ->
     R.destroy r
     >>= fun () ->
     Lwt.return (Result.Ok ())
