@@ -136,7 +136,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
             let request = or_option @@ Client.rpc client buffer in
             match server.Server.timeout_ms with
             | None -> request
-            | Some t -> Lwt.pick [ (Time.sleep (float_of_int t /. 1000.0) >>= fun () -> Lwt.return None); request ] in
+            | Some t -> Lwt.pick [ (Time.sleep_ns (Int64.mul (Int64.of_int t) 1_000_000L) >>= fun () -> Lwt.return None); request ] in
 
           (* Send the request to all relevant servers in groups. If no response
              is heard from a group, then we proceed to the next group *)

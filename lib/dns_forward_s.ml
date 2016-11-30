@@ -34,6 +34,7 @@ module type FLOW_SERVER = sig
   val bind: address -> (server, [ `Msg of string ]) Lwt_result.t
   val getsockname: server -> address
   type flow
+(*  val listen : server -> (flow V1.Flow.or_eof -> (flow, 'a) Result.result Lwt.t) -> (unit, 'b) Lwt_result.t *)
   val listen: server -> (flow -> unit Lwt.t) -> unit
   val shutdown: server -> unit Lwt.t
 end
@@ -90,7 +91,7 @@ module type READERWRITER = sig
   type t
   type flow
   val connect: flow -> t
-  val read: t -> (request, [ `Msg of string ]) Lwt_result.t
-  val write: t -> response -> (unit, [ `Msg of string]) Lwt_result.t
+  val read: t -> (request V1.Flow.or_eof, V1.Flow.error) Result.result Lwt.t
+  val write: t -> response -> (unit, V1.Flow.write_error) Result.result Lwt.t
   val close: t -> unit Lwt.t
 end

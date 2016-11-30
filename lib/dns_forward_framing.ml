@@ -25,7 +25,6 @@ module Log = (val Logs.src_log src : Logs.LOG)
 module type S = Dns_forward_s.READERWRITER
 
 module Tcp(Flow: V1_LWT.FLOW) = struct
-  let errorf = Dns_forward_error.errorf
 
   module C = Channel.Make(Flow)
 
@@ -47,33 +46,21 @@ module Tcp(Flow: V1_LWT.FLOW) = struct
   let close t =
     Flow.close @@ C.to_flow t.c
 
+  let (>>==) a fn =
+    let open Lwt.Infix in
+    a >>= function
+    | Error e -> Lwt.return (Error e)
+    | Ok `Eof -> Lwt.return (Ok `Eof)
+    | Ok (`Data x) -> fn x 
+
   let read t =
     Lwt_mutex.with_lock t.read_m
       (fun () ->
-        let open Lwt_result.Infix in
-        Lwt.catch
-          (fun () ->
-            let open Lwt.Infix in
-            C.read_exactly ~len:2 t.c
-            >>= fun bufs ->
-            Lwt_result.return bufs
-          ) (fun e ->
-            errorf "Failed to read response header: %s" (Printexc.to_string e)
-          )
-        >>= fun bufs ->
+        C.read_exactly ~len:2 t.c >>== fun bufs ->
         let buf = Cstruct.concat bufs in
         let len = Cstruct.BE.get_uint16 buf 0 in
-        Lwt.catch
-          (fun () ->
-            let open Lwt.Infix in
-            C.read_exactly ~len t.c
-            >>= fun bufs ->
-            Lwt_result.return bufs
-          ) (fun e ->
-            errorf "Failed to read response payload (%d bytes): %s" len (Printexc.to_string e)
-          )
-        >>= fun bufs ->
-        Lwt_result.return (Cstruct.concat bufs)
+        C.read_exactly ~len t.c >>== fun bufs ->
+        Lwt.return (Ok (`Data (Cstruct.concat bufs)))
       )
 
   let write t buffer =
@@ -84,51 +71,18 @@ module Tcp(Flow: V1_LWT.FLOW) = struct
         Cstruct.BE.set_uint16 header 0 (Cstruct.len buffer);
         C.write_buffer t.c header;
         C.write_buffer t.c buffer;
-        Lwt.catch
-          (fun () ->
-            let open Lwt.Infix in
-            C.flush t.c
-            >>= fun () ->
-            Lwt_result.return ()
-          ) (fun e ->
-            errorf "Failed to write %d bytes: %s" (Cstruct.len buffer) (Printexc.to_string e)
-          )
+        C.flush t.c
       )
 end
 
 module Udp(Flow: V1_LWT.FLOW) = struct
-  module Error = Dns_forward_error.Infix
-  let errorf = Dns_forward_error.errorf
-
   type request = Cstruct.t
   type response = Cstruct.t
   type flow = Flow.flow
   type t = Flow.flow
 
   let connect flow = flow
-
-  let close t =
-    Flow.close t
-
-  let read t =
-    let open Lwt.Infix in
-    Flow.read t
-    >>= function
-    | `Ok buf ->
-      Lwt_result.return buf
-    | `Eof ->
-      errorf "read: Eof"
-    | `Error e ->
-      errorf "read: %s" (Flow.error_message e)
-
-  let write t buf =
-    let open Lwt.Infix in
-    Flow.write t buf
-    >>= function
-    | `Ok buf ->
-      Lwt_result.return buf
-    | `Eof ->
-      errorf "read: Eof"
-    | `Error e ->
-      errorf "write: %s" (Flow.error_message e)
+  let close t = Flow.close t
+  let read t = Flow.read t
+  let write t buf = Flow.write t buf
 end

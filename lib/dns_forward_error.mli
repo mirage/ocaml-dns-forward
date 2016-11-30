@@ -18,8 +18,11 @@
 type 'a t = ('a, [ `Msg of string ]) Lwt_result.t
 
 module FromFlowError(Flow: V1_LWT.FLOW): sig
-  val ( >>= ) : [< `Eof | `Error of Flow.error | `Ok of 'b ] Lwt.t ->
-    ('b -> ('c, [> `Msg of string ] as 'd) result Lwt.t) -> ('c, 'd) result Lwt.t
+  val ( >>= ) :
+    ('a V1.Flow.or_eof, Rresult.R.msg) Result.result Lwt.t ->
+    ('a -> ('b, Rresult.R.msg as 'c) Result.result Lwt.t) ->
+    ('b, 'c) Result.result Lwt.t
+
 end
 
 val errorf: ('a, unit, string, ('b, [> `Msg of string ]) result Lwt.t) format4 -> 'a
