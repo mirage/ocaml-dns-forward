@@ -69,7 +69,7 @@ module Make(Time: V1_LWT.TIME) = struct
     let min_ttl = List.fold_left (min) Int32.max_int (List.map (fun rr -> rr.Dns.Packet.ttl) answers) in
     let timeout =
       let open Lwt.Infix in
-      Time.sleep (Int32.to_float min_ttl)
+      Time.sleep_ns (Int64.(mul (of_int32 min_ttl) 1_000_000_000L))
       >>= fun () ->
       t.cache <- QMap.remove question t.cache;
       Lwt.return_unit in

@@ -83,7 +83,10 @@ module Client = struct
         | Result.Error (`Msg m) ->
           Log.debug (fun f -> f "%s: dispatcher shutting down: %s" (to_string t) m);
           disconnect t
-        | Result.Ok buffer ->
+        | Result.Ok `Eof ->
+          Log.debug (fun f -> f "%s: dispatcher shutting down: EOF" (to_string t));
+          disconnect t
+        | Result.Ok (`Data buffer) ->
           let buf = Dns.Buf.of_cstruct buffer in
           begin match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 (Cstruct.len buffer)) with
           | Some ({ Dns.Packet.questions = [ question ]; _ } as response) ->
@@ -133,7 +136,7 @@ module Client = struct
             Lwt_result.return rw)
       >>= fun rw ->
       (* Add a fresh idle timer *)
-      t.disconnect_on_idle <- (let open Lwt.Infix in Time.sleep 30. >>= fun () -> disconnect t);
+      t.disconnect_on_idle <- (let open Lwt.Infix in Time.sleep_ns (Int64.mul 30L 1_000_000_000L) >>= fun () -> disconnect t);
       Lwt_result.return rw
 
     let connect ?(message_cb = fun ?src:_ ?dst:_ ~buf:_ () -> Lwt.return_unit) address =
@@ -178,32 +181,35 @@ module Client = struct
                 let open Lwt.Infix in
                 begin
                   let open Lwt_result.Infix in
-                  get_rw t
-                  >>= fun rw ->
+                  get_rw t >>= fun rw ->
                   let open Lwt.Infix in
-                  t.message_cb ~dst:t.address ~buf:buffer ()
-                  >>= fun () ->
+                  t.message_cb ~dst:t.address ~buf:buffer () >>= fun () ->
                   (* An existing connection to the server might have been closed by the server;
                      therefore if we fail to write the request, reconnect and try once more. *)
+                  let reconnect () =
+                    disconnect t >>= fun () ->
+                    let open Lwt_result.Infix in
+                    get_rw t >>= fun rw ->
+                    let open Lwt.Infix in
+                    t.message_cb ~dst:t.address ~buf:buffer () >>= fun () ->
+                    Packet.write rw buffer >|= function
+                    | Result.Ok () -> Result.Ok ()
+                    | Result.Error `Closed -> Result.Error (`Msg "Connection still closed on reconnect")
+                    | Result.Error (`Msg m) -> Result.Error (`Msg m)
+                  in
                   Packet.write rw buffer
                   >>= function
                   | Result.Ok () ->
                     Lwt_result.return ()
                   | Result.Error (`Msg m) ->
                     Log.info (fun f -> f "%s: caught %s writing request, attempting to reconnect" (to_string t) m);
-                    disconnect t
-                    >>= fun () ->
-                    let open Lwt_result.Infix in
-                    get_rw t
-                    >>= fun rw ->
-                    let open Lwt.Infix in
-                    t.message_cb ~dst:t.address ~buf:buffer ()
-                    >>= fun () ->
-                    Packet.write rw buffer
-                end
+                    reconnect ()
+                  | Result.Error `Closed ->
+                    Log.info (fun f -> f "%s: closed channel writing request, attempting to reconect" (to_string t));
+                    reconnect ()
+               end
                 >>= function
-                | Result.Error (`Msg m) ->
-                  Lwt_result.fail (`Msg m)
+                | Result.Error (`Msg m) -> Lwt_result.fail (`Msg m)
                 | Result.Ok () ->
                   let open Lwt_result.Infix in
                   th (* will be woken up by the dispatcher *)
