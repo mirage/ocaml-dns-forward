@@ -53,7 +53,7 @@ module Make(Server: Rpc.Server.S) = struct
             Lwt.return (Result.Error (`Msg "no mapping for name"))
           | Some v4 ->
             let answers = [ { name = q_name; cls = RR_IN; flush = false; ttl = 0l; rdata = A v4 } ] in
-            let detail = { detail with Dns.Packet.qr = Dns.Packet.Response } in
+            let detail = { detail with Dns.Packet.qr = Dns.Packet.Response; ra = true } in
             let questions = match t.simulate_bad_question with
               | true -> [ bad_question ]
               | false -> request.questions in
