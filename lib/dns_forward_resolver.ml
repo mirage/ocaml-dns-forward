@@ -173,7 +173,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
                 ) servers in
                 (* Wait until either a positive result or all threads have quit *)
                 let all_quit = Lwt.catch (fun () -> Lwt.join all >>= fun () -> Lwt.return_none) (fun _ -> Lwt.return_none) in
-                Lwt.pick [ all_quit; result_t ]
+                Lwt.choose [ all_quit; result_t ]
                 >>= fun _ ->
                 (* If we have a result, return it *)
                 begin match Lwt.state result_t with
