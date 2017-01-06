@@ -140,10 +140,11 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
               let _, client = List.find (fun (s, _) -> s = server) t.connections in
               let request = or_option @@ Client.rpc client buffer in
               begin
-                begin match server.Server.timeout_ms with
-                | None -> request
-                | Some t -> Lwt.pick [ (Time.sleep (float_of_int t /. 1000.0) >>= fun () -> Lwt.return None); request ]
-                end >>= function
+                (* If no timeout is configured, we will stop listening after
+                   5s to avoid leaking threads if a server is offline *)
+                let timeout_ms = match server.Server.timeout_ms with None -> 5000 | Some x -> x in
+                Lwt.pick [ (Time.sleep (float_of_int timeout_ms /. 1000.0) >>= fun () -> Lwt.return None); request ]
+                >>= function
                 | None -> Lwt.return None
                 | Some reply ->
                   (* Insert the reply into the cache *)
