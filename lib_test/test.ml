@@ -227,9 +227,12 @@ let test_good_bad_server () =
     let open Error in
     S.serve ~address:public_address public_server
     >>= fun _ ->
+    let bad_server = S.make [] in
+    let bad_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 999 } in
+    S.serve ~address:bad_address bad_server
+    >>= fun _ ->
     let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
     let open Dns_forward.Config in
-    let bad_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 999 } in
     (* Forward to a good server and a bad server, both with timeouts. The request to
        the bad request should fail fast but the good server should be given up to
        the timeout to respond *)
@@ -245,7 +248,14 @@ let test_good_bad_server () =
     let request =
       R.answer request r
       >>= function
-      | Result.Ok _ -> Lwt.return_true
+      | Result.Ok reply ->
+        let len = Cstruct.len reply in
+        let buf = Dns.Buf.of_cstruct reply in
+        begin match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
+        | Some { Dns.Packet.answers = _ :: _ ; _ } -> Lwt.return_true
+        | Some packet -> failwith ("test_good_bad_server bad response: " ^ (Dns.Packet.to_string packet))
+        | None -> failwith "test_good_bad_server: failed to parse response"
+        end
       | Result.Error _ -> failwith "test_good_bad_server timeout: did the failure overtake the success?" in
     let timeout =
       Lwt_unix.sleep 5.
