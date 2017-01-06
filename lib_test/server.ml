@@ -50,7 +50,18 @@ module Make(Server: Rpc.Server.S) = struct
             | None,   Ipaddr.V6 _  -> None
           ) None t.names with
           | None ->
-            Lwt.return (Result.Error (`Msg "no mapping for name"))
+            let answers = [] in
+            let detail = { detail with
+              Dns.Packet.qr = Dns.Packet.Response;
+              rcode = Dns.Packet.NXDomain
+            } in
+            let questions = match t.simulate_bad_question with
+              | true -> [ bad_question ]
+              | false -> request.questions in
+            let pkt = { Dns.Packet.id; detail; questions; authorities=[]; additionals; answers } in
+            let buf = Dns.Buf.create 1024 in
+            let buf = marshal buf pkt in
+            Lwt.return (Result.Ok (Cstruct.of_bigarray buf))
           | Some v4 ->
             let answers = [ { name = q_name; cls = RR_IN; flush = false; ttl = 0l; rdata = A v4 } ] in
             let detail = { detail with Dns.Packet.qr = Dns.Packet.Response } in
