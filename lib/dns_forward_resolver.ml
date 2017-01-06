@@ -69,10 +69,6 @@ let or_fail_msg m = m >>= function
   | Result.Error (`Msg m) -> Lwt.fail (Failure m)
   | Result.Ok x -> Lwt.return x
 
-let or_option m = m >>= function
-  | Result.Error _ -> Lwt.return None
-  | Result.Ok x -> Lwt.return (Some x)
-
 module type S = Dns_forward_s.RESOLVER
 
 module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
@@ -127,34 +123,49 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
         | Some answers -> Lwt_result.return (marshal_reply answers)
         | None ->
           (* Possible outcomes are:
-             - Some <result>: candidate for returning to the client
-             - None: timeout
-             - failure: probably a network error *)
+
+            Perform RPC to all servers
+              - choose highest-priority Ok (`Success _)
+              - or choose highest-priority Error
+          *)
+
+          (* Possible outcomes are:
+            Ok (`Success buf): succesful reply
+            Ok (`Failure buf): an error like NXDomain
+            Error (`Msg m): a low-level error or timeout
+          *)
           let one_rpc server =
             let open Dns_forward_config in
             let address = server.Server.address in
             (* Look in the cache *)
             match Cache.answer t.cache address question with
-            | Some answers -> Lwt.return (Some (marshal_reply answers))
+            | Some answers -> Lwt.return (Ok (`Success (marshal_reply answers)))
             | None ->
               let _, client = List.find (fun (s, _) -> s = server) t.connections in
-              let request = or_option @@ Client.rpc client buffer in
               begin
                 (* If no timeout is configured, we will stop listening after
                    5s to avoid leaking threads if a server is offline *)
                 let timeout_ms = match server.Server.timeout_ms with None -> 5000 | Some x -> x in
-                Lwt.pick [ (Time.sleep (float_of_int timeout_ms /. 1000.0) >>= fun () -> Lwt.return None); request ]
+                Lwt.pick [
+                  ( Time.sleep (float_of_int timeout_ms /. 1000.0)
+                    >>= fun () ->
+                    Lwt.return (Error (`Msg "timeout")) );
+                  Client.rpc client buffer
+                ]
                 >>= function
-                | None -> Lwt.return None
-                | Some reply ->
-                  (* Insert the reply into the cache *)
+                | Error x -> Lwt.return (Error x)
+                | Ok reply ->
+                  (* Determine whether it's a success or a failure; if a success
+                     then insert the value into the cache. *)
                   let len = Cstruct.len reply in
                   let buf = Dns.Buf.of_cstruct reply in
                   begin match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
-                  | Some { answers; _ } -> if answers <> [] then Cache.insert t.cache address question answers
-                  | _ -> ()
-                  end;
-                  Lwt.return (Some reply)
+                  | Some { detail = { rcode = NoError; _ }; answers = ((_ :: _) as answers); _ } ->
+                    Cache.insert t.cache address question answers;
+                    Lwt.return (Ok (`Success reply))
+                  | _ ->
+                    Lwt.return (Ok (`Failure reply))
+                  end
               end in
 
           (* Send the request to all relevant servers in groups. If no response
@@ -166,11 +177,12 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
                 let all = List.map (fun server ->
                   one_rpc server
                   >>= function
-                  | Some result ->
+                  | Ok (`Success result)
+                  | Ok (`Failure result) ->
                     (* first positive response becomes the result *)
                     (try Lwt.wakeup_later result_u (Some result) with Invalid_argument _ -> ());
                     Lwt.return_unit
-                  | None -> Lwt.return_unit
+                  | Error _ -> Lwt.return_unit
                 ) servers in
                 (* Wait until either a positive result or all threads have quit *)
                 let all_quit = Lwt.catch (fun () -> Lwt.join all >>= fun () -> Lwt.return_none) (fun _ -> Lwt.return_none) in
