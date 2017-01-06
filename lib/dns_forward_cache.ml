@@ -48,11 +48,13 @@ module Make(Time: V1_LWT.TIME) = struct
     let cache = Question.Map.empty in
     { max_bindings; cache }
 
-  let answer t question =
+  let answer t address question =
     if Question.Map.mem question t.cache then begin
       let all = Question.Map.find question t.cache in
-      Address.Map.fold (fun address answer acc -> (address, answer.rrs) :: acc) all []
-    end else []
+      if Address.Map.mem address all
+      then Some (Address.Map.find address all).rrs
+      else None
+    end else None
 
   let remove t question =
     if Question.Map.mem question t.cache then begin
