@@ -110,8 +110,8 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
     | Some ({ questions = [ question ]; _ } as request) ->
       begin
         begin match Cache.answer t.cache question with
-          | Some x -> Lwt.return (Some x)
-          | None ->
+          | (_, x) :: _ -> Lwt.return (Some x)
+          | [] ->
             (* Next see if we have a local answer to this question *)
             t.local_names_cb question
         end >>= function
@@ -149,7 +149,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
                   >>= function
                   | Some result ->
                     (* first positive response becomes the result *)
-                    (try Lwt.wakeup_later result_u (Some result) with Invalid_argument _ -> ());
+                    (try Lwt.wakeup_later result_u (Some (server.Dns_forward_config.Server.address, result)) with Invalid_argument _ -> ());
                     Lwt.return_unit
                   | None -> Lwt.return_unit
                 ) servers in
@@ -166,12 +166,12 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
             ) None (choose_servers (List.map fst t.connections) request)
           >>= function
           | None -> Lwt_result.fail (`Msg "no response within the timeout")
-          | Some reply ->
+          | Some (address, reply) ->
             (* Add the data to the cache for next time *)
             let len = Cstruct.len reply in
             let buf = Dns.Buf.of_cstruct reply in
             begin match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
-            | Some { answers; _ } -> if answers <> [] then Cache.insert t.cache question answers
+            | Some { answers; _ } -> if answers <> [] then Cache.insert t.cache address question answers
             | _ -> ()
             end;
             Lwt_result.return reply

@@ -26,10 +26,10 @@ module Make(Time: V1_LWT.TIME): sig
   val destroy: t -> unit
   (** Destroy the cache and free associated resources *)
 
-  val answer: t -> Dns.Packet.question -> Dns.Packet.rr list option
-  (** Look up the answer to the given question in the cache. Returns None if
-      the cache has no binding. *)
+  val answer: t -> Dns.Packet.question -> (Dns_forward_config.Address.t * Dns.Packet.rr list) list
+  (** Look up the answers to the given question in the cache. Returns all
+      answers received from all servers. *)
 
-  val insert: t -> Dns.Packet.question -> Dns.Packet.rr list -> unit
+  val insert: t -> Dns_forward_config.Address.t -> Dns.Packet.question -> Dns.Packet.rr list -> unit
   (** Insert the answer to the question into the cache *)
 end
