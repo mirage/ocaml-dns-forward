@@ -15,13 +15,23 @@
  *
  *)
 
-(* Pervasives.compare is ok because the question consists of a record of
-   constant constructors and a string list. Ideally ocaml-dns would provide
-   nice `compare` functions. *)
-module QMap = Map.Make(struct type t = Dns.Packet.question let compare = Pervasives.compare end)
+module Question = struct
+  module M = struct
+    type t = Dns.Packet.question
 
-type result = {
-  answers: Dns.Packet.rr list;
+    (* Pervasives.compare is ok because the question consists of a record of
+       constant constructors and a string list. Ideally ocaml-dns would provide
+       nice `compare` functions. *)
+    let compare = Pervasives.compare
+  end
+  module Map = Map.Make(M)
+  include M
+end
+
+module Address = Dns_forward_config.Address
+
+type answer = {
+  rrs: Dns.Packet.rr list;
   (* We'll use the Lwt scheduler as a priority queue to expire records, one
      timeout thread per record. *)
   timeout: unit Lwt.t;
@@ -30,48 +40,63 @@ type result = {
 module Make(Time: V1_LWT.TIME) = struct
   type t = {
     max_bindings: int;
-    mutable cache: result QMap.t;
+    (* For every question we store a mapping of server address to the answer *)
+    mutable cache: answer Address.Map.t Question.Map.t;
   }
 
   let make ?(max_bindings=1024) () =
-    let cache = QMap.empty in
+    let cache = Question.Map.empty in
     { max_bindings; cache }
 
   let answer t question =
-    if QMap.mem question t.cache
-    then Some (QMap.find question t.cache).answers
-    else None
+    if Question.Map.mem question t.cache then begin
+      let all = Question.Map.find question t.cache in
+      Address.Map.fold (fun address answer acc -> (address, answer.rrs) :: acc) all []
+    end else []
 
   let remove t question =
-    if QMap.mem question t.cache then begin
-      Lwt.cancel (QMap.find question t.cache).timeout;
-      t.cache <- QMap.remove question t.cache;
+    if Question.Map.mem question t.cache then begin
+      let all = Question.Map.find question t.cache in
+      Address.Map.iter (fun _ answer -> Lwt.cancel answer.timeout) all;
+      t.cache <- Question.Map.remove question t.cache;
     end
 
   let destroy t =
-    QMap.iter (fun _ { timeout; _ } -> Lwt.cancel timeout) t.cache;
-    t.cache <- QMap.empty
+    Question.Map.iter (fun _ all -> Address.Map.iter (fun _ answer -> Lwt.cancel answer.timeout) all) t.cache;
+    t.cache <- Question.Map.empty
 
-  let insert t question answers =
-    (* If there's an existing binding we'll remove it now *)
-    remove t question;
+  let insert t address question rrs =
     (* If we already have the maximum number of bindings then remove one at
        random *)
-    if QMap.cardinal t.cache >= t.max_bindings then begin
-      let choice = Random.int (QMap.cardinal t.cache) in
-      match QMap.fold (fun question _ (i, existing) ->
+    if Question.Map.cardinal t.cache >= t.max_bindings then begin
+      let choice = Random.int (Question.Map.cardinal t.cache) in
+      match Question.Map.fold (fun question _ (i, existing) ->
         i + 1, if i = choice then Some question else existing
       ) t.cache (0, None) with
       | _, None -> (* should never happen *) ()
       | _, Some question -> remove t question
     end;
-    (* We'll expire all records when the lowest TTL is hit to make the code simpler *)
-    let min_ttl = List.fold_left (min) Int32.max_int (List.map (fun rr -> rr.Dns.Packet.ttl) answers) in
+    (* Each resource record could be expired separately using a different TTL
+       but we'll simplify the code by expiring all resource records received
+       from the same server address when the lowest TTL is exceeded. *)
+    let min_ttl = List.fold_left (min) Int32.max_int (List.map (fun rr -> rr.Dns.Packet.ttl) rrs) in
     let timeout =
       let open Lwt.Infix in
       Time.sleep (Int32.to_float min_ttl)
       >>= fun () ->
-      t.cache <- QMap.remove question t.cache;
+      if Question.Map.mem question t.cache then begin
+        let address_to_answer =
+          Question.Map.find question t.cache
+          |> Address.Map.remove address in
+        if Address.Map.is_empty address_to_answer
+        then t.cache <- Question.Map.remove question t.cache
+        else t.cache <- Question.Map.add question address_to_answer t.cache
+      end;
       Lwt.return_unit in
-    t.cache <- QMap.add question { answers; timeout } t.cache
+    let answer = { rrs; timeout } in
+    let address_to_answer =
+      if Question.Map.mem question t.cache
+      then Question.Map.find question t.cache
+      else Address.Map.empty in
+    t.cache <- Question.Map.add question (Address.Map.add address answer address_to_answer) t.cache
 end
