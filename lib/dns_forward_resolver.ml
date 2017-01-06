@@ -108,12 +108,18 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
     let open Dns.Packet in
     match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
     | Some ({ questions = [ question ]; _ } as request) ->
+      (* Look for any local answers to this question *)
       begin
-        begin match Cache.answer t.cache question with
-          | (_, x) :: _ -> Lwt.return (Some x)
-          | [] ->
-            (* Next see if we have a local answer to this question *)
-            t.local_names_cb question
+        begin
+          t.local_names_cb question
+          >>= function
+          | Some x -> Lwt.return (Some x)
+          | None ->
+            (* Second look in the cache *)
+            begin match Cache.answer t.cache question with
+              | (_, x) :: _ -> Lwt.return (Some x)
+              | [] -> Lwt.return None
+            end
         end >>= function
         | Some answers ->
           let id = request.id in
