@@ -463,8 +463,9 @@ let test_order () =
   | Result.Ok () ->
     (* the disconnects and close should have removed all the connections: *)
     Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+    (* We now query all servers matching a zone *)
     Alcotest.(check int) "private_server queries" 1 (S.get_nr_queries private_server);
-    Alcotest.(check int) "public_server queries" 0 (S.get_nr_queries public_server);
+    Alcotest.(check int) "public_server queries" 1 (S.get_nr_queries public_server);
   | Result.Error (`Msg m) -> failwith m
 
 let test_forwarder_zone () =
