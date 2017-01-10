@@ -61,7 +61,8 @@ let choose_servers config request =
       (fun order ->
         List.filter (fun server -> server.Server.order = order) all
       ) (IntSet.elements orders)
-  | _ -> [ [] ]
+    |> List.concat
+  | _ -> []
   end
 
 let or_fail_msg m = m >>= function
@@ -166,8 +167,6 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
              (if configured).
              Group the servers into lists of equal priorities. *)
           choose_servers (List.map fst t.connections) request
-          |>
-          List.concat
           |>
           (* Send all requests in parallel to minimise the chance of hitting a
              timeout. Positive replies will be cached, but servers which don't
