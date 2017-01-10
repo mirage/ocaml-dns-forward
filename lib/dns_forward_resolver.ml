@@ -53,8 +53,8 @@ let choose_servers config request =
         (* If any of the configured domains match, send to these servers *)
         matching_servers
       | [] ->
-        (* Otherwise send to all servers with no match *)
-        List.filter (fun server -> server.Server.zones = Domain.Set.empty) config in
+        (* Otherwise send to all servers *)
+        config in
     (* Now we order by the order field *)
     let orders = List.fold_left (fun set server -> IntSet.add server.Server.order set) IntSet.empty all in
     List.map
