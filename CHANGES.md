@@ -1,3 +1,11 @@
+### 0.8.0 (2017-01-11)
+
+- send all requests in parallel, process results in order
+- don't cancel listening threads when the first response arrives, so
+  we can cache all server responses
+- servers with zones are now included in general searches
+- prioritise successful responses over failures
+
 ### 0.7.2 (2016-11-18)
 
 - Fix build with OCaml 4.04
