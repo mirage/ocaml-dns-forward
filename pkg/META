@@ -1,5 +1,5 @@
 description = "A DNS forwarding library"
-version = "0.7.2"
+version = "0.8.0"
 requires = "lwt logs fmt astring rresult cstruct mirage-flow channel mtime sexplib ipaddr dns"
 archive(byte) = "dns-forward.cma"
 archive(native) = "dns-forward.cmxa"
