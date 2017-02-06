@@ -1,3 +1,7 @@
+### 0.8.1 (2017-02-06)
+
+- always set the Recursion Available bit from cached responses
+
 ### 0.8.0 (2017-01-11)
 
 - send all requests in parallel, process results in order
