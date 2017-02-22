@@ -211,9 +211,9 @@ module Rpc: sig
     end
 
     module Make
-      (Flow: Flow.Client with type address = Ipaddr.t * int)
-      (Framing: Framing.S with type flow = Flow.flow)
-      (Time: V1_LWT.TIME): S
+        (Flow: Flow.Client with type address = Ipaddr.t * int)
+        (Framing: Framing.S with type flow = Flow.flow)
+        (Time: V1_LWT.TIME): S
     (** Construct an RPC client given a Flow and a method of Framing messages
         over the flow. *)
   end
@@ -246,9 +246,9 @@ module Rpc: sig
     end
 
     module Make
-      (Flow: Flow.Server with type address = Ipaddr.t * int)
-      (Framing: Framing.S with type flow = Flow.flow)
-      (Time: V1_LWT.TIME): S
+        (Flow: Flow.Server with type address = Ipaddr.t * int)
+        (Framing: Framing.S with type flow = Flow.flow)
+        (Time: V1_LWT.TIME): S
     (** Construct an RPC server given a Flow and a method of Framing messages
         over the flow. *)
   end

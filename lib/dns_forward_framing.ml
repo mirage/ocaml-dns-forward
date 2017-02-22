@@ -50,49 +50,49 @@ module Tcp(Flow: V1_LWT.FLOW) = struct
   let read t =
     Lwt_mutex.with_lock t.read_m
       (fun () ->
-        let open Lwt_result.Infix in
-        Lwt.catch
-          (fun () ->
-            let open Lwt.Infix in
-            C.read_exactly ~len:2 t.c
-            >>= fun bufs ->
-            Lwt_result.return bufs
-          ) (fun e ->
-            errorf "Failed to read response header: %s" (Printexc.to_string e)
-          )
-        >>= fun bufs ->
-        let buf = Cstruct.concat bufs in
-        let len = Cstruct.BE.get_uint16 buf 0 in
-        Lwt.catch
-          (fun () ->
-            let open Lwt.Infix in
-            C.read_exactly ~len t.c
-            >>= fun bufs ->
-            Lwt_result.return bufs
-          ) (fun e ->
-            errorf "Failed to read response payload (%d bytes): %s" len (Printexc.to_string e)
-          )
-        >>= fun bufs ->
-        Lwt_result.return (Cstruct.concat bufs)
+         let open Lwt_result.Infix in
+         Lwt.catch
+           (fun () ->
+              let open Lwt.Infix in
+              C.read_exactly ~len:2 t.c
+              >>= fun bufs ->
+              Lwt_result.return bufs
+           ) (fun e ->
+               errorf "Failed to read response header: %s" (Printexc.to_string e)
+             )
+         >>= fun bufs ->
+         let buf = Cstruct.concat bufs in
+         let len = Cstruct.BE.get_uint16 buf 0 in
+         Lwt.catch
+           (fun () ->
+              let open Lwt.Infix in
+              C.read_exactly ~len t.c
+              >>= fun bufs ->
+              Lwt_result.return bufs
+           ) (fun e ->
+               errorf "Failed to read response payload (%d bytes): %s" len (Printexc.to_string e)
+             )
+         >>= fun bufs ->
+         Lwt_result.return (Cstruct.concat bufs)
       )
 
   let write t buffer =
     Lwt_mutex.with_lock t.write_m
       (fun () ->
-        (* RFC 1035 4.2.2 TCP Usage: 2 byte length field *)
-        let header = Cstruct.create 2 in
-        Cstruct.BE.set_uint16 header 0 (Cstruct.len buffer);
-        C.write_buffer t.c header;
-        C.write_buffer t.c buffer;
-        Lwt.catch
-          (fun () ->
-            let open Lwt.Infix in
-            C.flush t.c
-            >>= fun () ->
-            Lwt_result.return ()
-          ) (fun e ->
-            errorf "Failed to write %d bytes: %s" (Cstruct.len buffer) (Printexc.to_string e)
-          )
+         (* RFC 1035 4.2.2 TCP Usage: 2 byte length field *)
+         let header = Cstruct.create 2 in
+         Cstruct.BE.set_uint16 header 0 (Cstruct.len buffer);
+         C.write_buffer t.c header;
+         C.write_buffer t.c buffer;
+         Lwt.catch
+           (fun () ->
+              let open Lwt.Infix in
+              C.flush t.c
+              >>= fun () ->
+              Lwt_result.return ()
+           ) (fun e ->
+               errorf "Failed to write %d bytes: %s" (Cstruct.len buffer) (Printexc.to_string e)
+             )
       )
 end
 
@@ -115,20 +115,20 @@ module Udp(Flow: V1_LWT.FLOW) = struct
     Flow.read t
     >>= function
     | `Ok buf ->
-      Lwt_result.return buf
+        Lwt_result.return buf
     | `Eof ->
-      errorf "read: Eof"
+        errorf "read: Eof"
     | `Error e ->
-      errorf "read: %s" (Flow.error_message e)
+        errorf "read: %s" (Flow.error_message e)
 
   let write t buf =
     let open Lwt.Infix in
     Flow.write t buf
     >>= function
     | `Ok buf ->
-      Lwt_result.return buf
+        Lwt_result.return buf
     | `Eof ->
-      errorf "read: Eof"
+        errorf "read: Eof"
     | `Error e ->
-      errorf "write: %s" (Flow.error_message e)
+        errorf "write: %s" (Flow.error_message e)
 end
