@@ -37,7 +37,7 @@ type answer = {
   timeout: unit Lwt.t;
 }
 
-module Make(Time: V1_LWT.TIME) = struct
+module Make(Time: Mirage_types_lwt.TIME) = struct
   type t = {
     max_bindings: int;
     (* For every question we store a mapping of server address to the answer *)
@@ -84,7 +84,7 @@ module Make(Time: V1_LWT.TIME) = struct
     let min_ttl = List.fold_left (min) Int32.max_int (List.map (fun rr -> rr.Dns.Packet.ttl) rrs) in
     let timeout =
       let open Lwt.Infix in
-      Time.sleep (Int32.to_float min_ttl)
+      Time.sleep_ns (Int64.(mul (of_int32 min_ttl) 1_000_000_000L))
       >>= fun () ->
       if Question.Map.mem question t.cache then begin
         let address_to_answer =

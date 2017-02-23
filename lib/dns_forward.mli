@@ -37,7 +37,7 @@ module Flow: sig
       on a well-known address (see Server) *)
 
   module type Client = sig
-    include Mirage_flow_s.SHUTDOWNABLE
+    include Mirage_flow.SHUTDOWNABLE
 
     type address
     (** Identifies an endpoint for [connect] *)
@@ -101,10 +101,10 @@ module Framing: sig
     (** Free resources and close the underlying flow *)
   end
 
-  module Tcp(Flow: V1_LWT.FLOW): S with type flow = Flow.flow
+  module Tcp(Flow: Mirage_flow_lwt.S): S with type flow = Flow.flow
   (** Use TCP framing *)
 
-  module Udp(Flow: V1_LWT.FLOW): S with type flow = Flow.flow
+  module Udp(Flow: Mirage_flow_lwt.S): S with type flow = Flow.flow
   (** Use UDP framing *)
 end
 
@@ -213,7 +213,7 @@ module Rpc: sig
     module Make
       (Flow: Flow.Client with type address = Ipaddr.t * int)
       (Framing: Framing.S with type flow = Flow.flow)
-      (Time: V1_LWT.TIME): S
+      (Time: Mirage_types_lwt.TIME): S
     (** Construct an RPC client given a Flow and a method of Framing messages
         over the flow. *)
   end
@@ -248,7 +248,7 @@ module Rpc: sig
     module Make
       (Flow: Flow.Server with type address = Ipaddr.t * int)
       (Framing: Framing.S with type flow = Flow.flow)
-      (Time: V1_LWT.TIME): S
+      (Time: Mirage_types_lwt.TIME): S
     (** Construct an RPC server given a Flow and a method of Framing messages
         over the flow. *)
   end
@@ -284,7 +284,7 @@ module Resolver: sig
         should be prepared to timeout and cancel the thread. *)
   end
 
-  module Make(Client: Rpc.Client.S)(Time: V1_LWT.TIME): S
+  module Make(Client: Rpc.Client.S)(Time: Mirage_types_lwt.TIME): S
   (** Construct a DNS resolver which will use the given [Client] Implementation
       to contact upstream servers, and the given [Time] implementation to handle
       timeouts. *)

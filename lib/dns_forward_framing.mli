@@ -17,12 +17,12 @@
 
 module type S = Dns_forward_s.READERWRITER
 
-module Tcp(Flow: V1_LWT.FLOW): sig
+module Tcp(Flow: Mirage_flow_lwt.S): sig
   include Dns_forward_s.READERWRITER
     with type flow = Flow.flow
 end
 
-module Udp(Flow: V1_LWT.FLOW): sig
+module Udp(Flow: Mirage_flow_lwt.S): sig
   include Dns_forward_s.READERWRITER
     with type flow = Flow.flow
 end
