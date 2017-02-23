@@ -72,7 +72,7 @@ let or_fail_msg m = m >>= function
 
 module type S = Dns_forward_s.RESOLVER
 
-module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
+module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: Mirage_types_lwt.TIME) = struct
 
   module Cache = Dns_forward_cache.Make(Time)
 
@@ -141,7 +141,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
                    5s to avoid leaking threads if a server is offline *)
                 let timeout_ms = match server.Server.timeout_ms with None -> 5000 | Some x -> x in
                 Lwt.pick [
-                  ( Time.sleep (float_of_int timeout_ms /. 1000.0)
+                  (Time.sleep_ns (Int64.mul (Int64.of_int timeout_ms) 1_000_000L)
                     >>= fun () ->
                     Lwt.return (Error (`Msg "timeout")) );
                   Client.rpc client buffer

@@ -23,7 +23,7 @@ module Client: sig
   module Make
     (Flow: Dns_forward_s.FLOW_CLIENT with type address = Ipaddr.t * int)
     (Framing: Dns_forward_s.READERWRITER with type flow = Flow.flow)
-    (Time: V1_LWT.TIME):
+    (Time: Mirage_types_lwt.TIME):
     S
 end
 
@@ -33,6 +33,6 @@ module Server: sig
   module Make
     (Flow: Dns_forward_s.FLOW_SERVER with type address = Ipaddr.t * int)
     (Framing: Dns_forward_s.READERWRITER with type flow = Flow.flow)
-    (Time: V1_LWT.TIME):
+    (Time: Mirage_types_lwt.TIME):
     S
 end
