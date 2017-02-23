@@ -1,0 +1,6 @@
+S lib/**
+S lib_test/**
+B _build/**
+
+PKG bytes lwt astring logs result cstruct fmt rresult ipaddr
+PKG dns mirage-flow cstruct.lwt channel mirage-types io-page.unix
