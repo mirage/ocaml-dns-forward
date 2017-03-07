@@ -82,6 +82,11 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
   type connection = {
     server: Dns_forward_config.Server.t;
     client: Client.t;
+    mutable reply_expected_since: float option;
+    (* if None: we don't expect a reply
+       if Some t: we haven't heard from the server since time t *)
+    mutable replies_missing: int;
+    (* the number of requests we've sent which have not been replied to *)
   }
 
   type t = {
@@ -94,7 +99,9 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
     Lwt_list.map_s (fun server ->
       or_fail_msg @@ Client.connect ?message_cb server.Dns_forward_config.Server.address
       >>= fun client ->
-      Lwt.return { server; client }
+      let reply_expected_since = None in
+      let replies_missing = 0 in
+      Lwt.return { server; client; reply_expected_since; replies_missing }
     ) (Dns_forward_config.Server.Set.elements config.Dns_forward_config.servers)
     >>= fun connections ->
     let cache = Cache.make () in
@@ -140,7 +147,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
             match Cache.answer t.cache address question with
             | Some answers -> Lwt.return (Ok (`Success (marshal_reply answers)))
             | None ->
-              let { client; _ } = List.find (fun c -> c.server = server) t.connections in
+              let c = List.find (fun c -> c.server = server) t.connections in
               begin
                 (* If no timeout is configured, we will stop listening after
                    5s to avoid leaking threads if a server is offline *)
@@ -149,11 +156,16 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
                   ( Time.sleep (float_of_int timeout_ms /. 1000.0)
                     >>= fun () ->
                     Lwt.return (Error (`Msg "timeout")) );
-                  Client.rpc client buffer
+                  Client.rpc c.client buffer
                 ]
                 >>= function
-                | Error x -> Lwt.return (Error x)
+                | Error x ->
+                  if c.reply_expected_since = None then c.reply_expected_since <- Some (Clock.time ());
+                  c.replies_missing <- c.replies_missing + 1;
+                  Lwt.return (Error x)
                 | Ok reply ->
+                  c.reply_expected_since <- None;
+                  c.replies_missing <- 0;
                   (* Determine whether it's a success or a failure; if a success
                      then insert the value into the cache. *)
                   let len = Cstruct.len reply in
