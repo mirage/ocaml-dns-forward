@@ -79,8 +79,13 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
   type address = Dns_forward_config.Address.t
   type message_cb = ?src:address -> ?dst:address -> buf:Cstruct.t -> unit -> unit Lwt.t
 
+  type connection = {
+    server: Dns_forward_config.Server.t;
+    client: Client.t;
+  }
+
   type t = {
-    connections: (Dns_forward_config.Server.t * Client.t) list;
+    connections: connection list;
     local_names_cb: (Dns.Packet.question -> Dns.Packet.rr list option Lwt.t);
     cache: Cache.t;
   }
@@ -89,7 +94,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
     Lwt_list.map_s (fun server ->
       or_fail_msg @@ Client.connect ?message_cb server.Dns_forward_config.Server.address
       >>= fun client ->
-      Lwt.return (server, client)
+      Lwt.return { server; client }
     ) (Dns_forward_config.Server.Set.elements config.Dns_forward_config.servers)
     >>= fun connections ->
     let cache = Cache.make () in
@@ -97,7 +102,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
 
   let destroy t =
     Cache.destroy t.cache;
-    Lwt_list.iter_s (fun (_, c) -> Client.disconnect c) t.connections
+    Lwt_list.iter_s (fun c -> Client.disconnect c.client) t.connections
 
   let answer buffer t =
     let len = Cstruct.len buffer in
@@ -135,7 +140,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
             match Cache.answer t.cache address question with
             | Some answers -> Lwt.return (Ok (`Success (marshal_reply answers)))
             | None ->
-              let _, client = List.find (fun (s, _) -> s = server) t.connections in
+              let { client; _ } = List.find (fun c -> c.server = server) t.connections in
               begin
                 (* If no timeout is configured, we will stop listening after
                    5s to avoid leaking threads if a server is offline *)
@@ -166,7 +171,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME) = struct
              prevent queries for private names being leaked to public servers
              (if configured).
              Group the servers into lists of equal priorities. *)
-          choose_servers (List.map fst t.connections) request
+          choose_servers (List.map (fun c -> c.server) t.connections) request
           |>
           (* Send all requests in parallel to minimise the chance of hitting a
              timeout. Positive replies will be cached, but servers which don't
