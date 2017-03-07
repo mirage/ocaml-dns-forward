@@ -32,3 +32,5 @@ module Server: sig
   module Tcp: Dns_forward.Server.S with type resolver = Resolver.Tcp.t
   (** A forwarding DNS proxy over TCP *)
 end
+
+module Clock: V1.CLOCK

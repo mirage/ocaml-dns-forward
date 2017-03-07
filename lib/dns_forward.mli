@@ -284,7 +284,7 @@ module Resolver: sig
         should be prepared to timeout and cancel the thread. *)
   end
 
-  module Make(Client: Rpc.Client.S)(Time: V1_LWT.TIME): S
+  module Make(Client: Rpc.Client.S)(Time: V1_LWT.TIME)(Clock: V1.CLOCK): S
   (** Construct a DNS resolver which will use the given [Client] Implementation
       to contact upstream servers, and the given [Time] implementation to handle
       timeouts. *)

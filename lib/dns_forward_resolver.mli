@@ -17,4 +17,4 @@
 
 module type S = Dns_forward_s.RESOLVER
 
-module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME): S
+module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK): S

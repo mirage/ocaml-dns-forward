@@ -1,5 +1,6 @@
 
 module Error = Dns_forward.Error.Infix
+module Clock = Dns_forward_lwt_unix.Clock
 
 let fresh_id =
   let next = ref 1000 in
@@ -87,7 +88,7 @@ let test_local_lookups () =
     let open Error in
     S.serve ~address:public_address public_server
     >>= fun _ ->
-    let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
+    let module R = Dns_forward.Resolver.Make(Rpc)(Time)(Clock) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
       { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
@@ -144,7 +145,7 @@ let test_tcp_multiplexing () =
     let open Error in
     S.serve ~address:public_address public_server
     >>= fun _ ->
-    let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
       { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
@@ -231,7 +232,7 @@ let test_good_bad_server () =
     let bad_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 999 } in
     S.serve ~address:bad_address bad_server
     >>= fun _ ->
-    let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
     let open Dns_forward.Config in
     (* Forward to a good server and a bad server, both with timeouts. The request to
        the bad request should fail fast but the good server should be given up to
@@ -286,7 +287,7 @@ let test_bad_server () =
     let open Error in
     S.serve ~address:public_address public_server
     >>= fun _ ->
-    let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
     let open Dns_forward.Config in
     let bad_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 999 } in
     (* Forward to a good server and a bad server, both with timeouts. The request to
@@ -336,7 +337,7 @@ let test_timeout () =
     S.serve ~address:bar_address bar_server
     >>= fun _ ->
     (* a resolver which uses both servers *)
-    let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
       { Server.address = bar_address; zones = Domain.Set.empty; timeout_ms = Some 0; order = 0 }
@@ -383,7 +384,7 @@ let test_cache () =
     S.serve ~address:bar_address bar_server
     >>= fun server ->
     (* a resolver which uses both servers *)
-    let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
       { Server.address = bar_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 }
@@ -438,7 +439,7 @@ let test_order () =
     >>= fun _ ->
 
     (* a resolver which uses both servers *)
-    let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
       { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = None; order = 1 };
@@ -488,7 +489,7 @@ let test_forwarder_zone () =
     S.serve ~address:bar_address bar_server
     >>= fun _ ->
     (* a resolver which uses both servers *)
-    let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
+    let module R = Dns_forward.Resolver.Make(Rpc)(Time)(Clock) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
       { Server.address = foo_address; zones = Domain.Set.add [ "foo" ] Domain.Set.empty; timeout_ms = None; order = 0 };
