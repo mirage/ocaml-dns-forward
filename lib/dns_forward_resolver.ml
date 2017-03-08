@@ -149,19 +149,29 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
             | None ->
               let c = List.find (fun c -> c.server = server) t.connections in
               begin
+                let now = Clock.time () in
                 (* If no timeout is configured, we will stop listening after
                    5s to avoid leaking threads if a server is offline *)
                 let timeout_ms = match server.Server.timeout_ms with None -> 5000 | Some x -> x in
-                Lwt.pick [
-                  ( Time.sleep (float_of_int timeout_ms /. 1000.0)
-                    >>= fun () ->
-                    Lwt.return (Error (`Msg "timeout")) );
+                (* Within the overall timeout_ms (configured by the user) we will send
+                   the request at 1s intervals to guard against packet drops. *)
+                let delays_ms =
+                  let rec make from = if from > timeout_ms then [] else from :: (make (from + 1000)) in
+                  make 0 in
+                let requests = List.map (fun delay_ms ->
+                  Time.sleep (float_of_int delay_ms /. 1000.0)
+                  >>= fun () ->
                   Client.rpc c.client buffer
-                ]
+                ) delays_ms in
+                let timeout =
+                  Time.sleep (float_of_int timeout_ms /. 1000.0)
+                  >>= fun () ->
+                  Lwt.return (Error (`Msg "timeout")) in
+                Lwt.pick (timeout :: requests)
                 >>= function
                 | Error x ->
-                  if c.reply_expected_since = None then c.reply_expected_since <- Some (Clock.time ());
-                  c.replies_missing <- c.replies_missing + 1;
+                  if c.reply_expected_since = None then c.reply_expected_since <- Some now;
+                  c.replies_missing <- c.replies_missing + (List.length delays_ms);
                   Lwt.return (Error x)
                 | Ok reply ->
                   c.reply_expected_since <- None;
