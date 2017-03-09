@@ -189,43 +189,51 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
                   end
               end in
 
-          (* Filter the list of servers using any "zone" setting -- this will
-             prevent queries for private names being leaked to public servers
-             (if configured).
-             Group the servers into lists of equal priorities. *)
-          choose_servers (List.map (fun c -> c.server) t.connections) request
-          |>
-          (* Send all requests in parallel to minimise the chance of hitting a
-             timeout. Positive replies will be cached, but servers which don't
-             recognise the name will be queried each time. *)
-          List.map one_rpc
-          |>
-          Lwt_list.fold_left_s
-            (fun best_so_far next_t -> match best_so_far with
-              | Ok (`Success result) ->
-                (* No need to wait for any of the rest: one success is good enough *)
-                Lwt.return (Ok (`Success result))
-              | best_so_far ->
-                next_t >>= fun next ->
-                begin match best_so_far, next with
-                | _, Ok (`Success result) ->
-                  Lwt.return (Ok (`Success result))
-                | Ok (`Failure (a_packet, a_reply)), Ok (`Failure (b_packet, b_reply)) ->
-                  begin match a_packet, b_packet with
-                  (* Prefer NXDomain to errors like Refused *)
-                  | Some { detail = { rcode = NXDomain; _ }; _ }, _ -> Lwt.return (Ok (`Failure (a_packet, a_reply)))
-                  | _, Some { detail = { rcode = NXDomain; _ }; _ } -> Lwt.return (Ok (`Failure (b_packet, b_reply)))
-                  | _, _ ->
-                    (* other than that, the earlier error is better *)
-                    Lwt.return (Ok (`Failure (a_packet, a_reply)))
-                  end
-                | Error _, Ok (`Failure (b_packet, b_reply)) ->
-                  (* prefer a high-level error over a low-level (e.g. socket) error *)
-                  Lwt.return (Ok (`Failure (b_packet, b_reply)))
-                | best_so_far, _ ->
-                  Lwt.return best_so_far
-                end
-            ) (Error (`Msg "no servers configured"))
+          let threads =
+            (* Filter the list of servers using any "zone" setting -- this will
+               prevent queries for private names being leaked to public servers
+               (if configured).
+               Group the servers into lists of equal priorities. *)
+            choose_servers (List.map (fun c -> c.server) t.connections) request
+            |>
+            (* Send all requests in parallel to minimise the chance of hitting a
+               timeout. Positive replies will be cached, but servers which don't
+               recognise the name will be queried each time. *)
+            List.map one_rpc in
+          let rec wait best_so_far remaining =
+            if remaining = []
+            then Lwt.return best_so_far
+            else
+              Lwt.nchoose_split remaining
+              >>= fun (terminated, remaining) ->
+              match List.fold_left
+                (fun best_so_far next -> match best_so_far with
+                  | Ok (`Success result) ->
+                    (* No need to wait for any of the rest: one success is good enough *)
+                    Ok (`Success result)
+                  | best_so_far ->
+                    begin match best_so_far, next with
+                    | _, Ok (`Success result) ->
+                      Ok (`Success result)
+                    | Ok (`Failure (a_packet, a_reply)), Ok (`Failure (b_packet, b_reply)) ->
+                      begin match a_packet, b_packet with
+                      (* Prefer NXDomain to errors like Refused *)
+                      | Some { detail = { rcode = NXDomain; _ }; _ }, _ -> Ok (`Failure (a_packet, a_reply))
+                      | _, Some { detail = { rcode = NXDomain; _ }; _ } -> Ok (`Failure (b_packet, b_reply))
+                      | _, _ ->
+                        (* other than that, the earlier error is better *)
+                        Ok (`Failure (a_packet, a_reply))
+                      end
+                    | Error _, Ok (`Failure (b_packet, b_reply)) ->
+                      (* prefer a high-level error over a low-level (e.g. socket) error *)
+                      Ok (`Failure (b_packet, b_reply))
+                    | best_so_far, _ ->
+                      best_so_far
+                    end
+                ) best_so_far terminated with
+              | Ok (`Success result) -> Lwt.return (Ok (`Success result))
+              | best_so_far -> wait best_so_far remaining in
+          wait (Error (`Msg "no servers configured")) threads
           >>= function
           | Ok (`Success reply) -> Lwt_result.return reply
           | Ok (`Failure (_, reply)) -> Lwt_result.return reply
