@@ -61,7 +61,6 @@ let choose_servers config request =
       (fun order ->
         List.filter (fun server -> server.Server.order = order) all
       ) (IntSet.elements orders)
-    |> List.concat
   | _ -> []
   end
 
@@ -217,7 +216,8 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
             (* Send all requests in parallel to minimise the chance of hitting a
                timeout. Positive replies will be cached, but servers which don't
                recognise the name will be queried each time. *)
-            List.map one_rpc in
+            List.map (List.map one_rpc) in
+          (* Wait for the best result from a set of equal priority requests *)
           let rec wait best_so_far remaining =
             if remaining = []
             then Lwt.return best_so_far
@@ -251,7 +251,12 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
                 ) best_so_far terminated with
               | Ok (`Success result) -> Lwt.return (Ok (`Success result))
               | best_so_far -> wait best_so_far remaining in
-          wait (Error (`Msg "no servers configured")) threads
+          (* Wait for each equal priority group at a time *)
+          Lwt_list.fold_left_s
+            (fun best_so_far next -> match best_so_far with
+              | Ok (`Success result) -> Lwt.return (Ok (`Success result))
+              | best_so_far -> wait best_so_far next
+            ) (Error (`Msg "no servers configured")) threads
           >>= function
           | Ok (`Success reply) -> Lwt_result.return reply
           | Ok (`Failure (_, reply)) -> Lwt_result.return reply
