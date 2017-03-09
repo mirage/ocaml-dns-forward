@@ -87,12 +87,15 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
        if Some t: we haven't heard from the server since time t *)
     mutable replies_missing: int;
     (* the number of requests we've sent which have not been replied to *)
+    mutable online: bool;
+    (* true if we assume the server is online *)
   }
 
   type t = {
     connections: connection list;
     local_names_cb: (Dns.Packet.question -> Dns.Packet.rr list option Lwt.t);
     cache: Cache.t;
+    config: Dns_forward_config.t;
   }
 
   let create ?(local_names_cb=fun _ -> Lwt.return_none) ?message_cb config =
@@ -101,11 +104,12 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
       >>= fun client ->
       let reply_expected_since = None in
       let replies_missing = 0 in
-      Lwt.return { server; client; reply_expected_since; replies_missing }
+      let online = true in
+      Lwt.return { server; client; reply_expected_since; replies_missing; online }
     ) (Dns_forward_config.Server.Set.elements config.Dns_forward_config.servers)
     >>= fun connections ->
     let cache = Cache.make () in
-    Lwt.return { connections; local_names_cb; cache }
+    Lwt.return { connections; local_names_cb; cache; config }
 
   let destroy t =
     Cache.destroy t.cache;
@@ -172,10 +176,24 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
                 | Error x ->
                   if c.reply_expected_since = None then c.reply_expected_since <- Some now;
                   c.replies_missing <- c.replies_missing + (List.length delays_ms);
+                  begin match t.config.assume_offline_after_drops with
+                    | Some d when d < c.replies_missing ->
+                      Log.err (fun f -> f "Upstream DNS server %s has dropped %d packets in a row: assuming it's offline"
+                        (Dns_forward_config.Address.to_string address) c.replies_missing
+                      );
+                      c.online <- false
+                    | _ -> ()
+                  end;
                   Lwt.return (Error x)
                 | Ok reply ->
                   c.reply_expected_since <- None;
                   c.replies_missing <- 0;
+                  if not c.online then begin
+                    Log.info (fun f -> f "Upstream DNS server %s is back online"
+                      (Dns_forward_config.Address.to_string address)
+                    );
+                    c.online <- true;
+                  end;
                   (* Determine whether it's a success or a failure; if a success
                      then insert the value into the cache. *)
                   let len = Cstruct.len reply in
