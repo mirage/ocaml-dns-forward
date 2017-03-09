@@ -54,6 +54,7 @@ end
 type t = {
   servers: Server.Set.t;
   search: string list;
+  assume_offline_after_drops: int option;
 } [@@deriving sexp]
 
 val of_string: string -> (t, [ `Msg of string ]) Result.result

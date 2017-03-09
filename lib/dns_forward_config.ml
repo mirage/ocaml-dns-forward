@@ -89,6 +89,7 @@ end
 type t = {
   servers: Server.Set.t;
   search: string list;
+  assume_offline_after_drops: int option;
 } [@@deriving sexp]
 
 let compare a b =
@@ -100,6 +101,7 @@ let search_prefix = "search "
 let zone_prefix = "zone "
 let timeout_prefix = "timeout "
 let order_prefix = "order "
+let assume_offline_after_prefix = "assume-offline-after "
 
 let of_string txt =
   let open Astring in
@@ -139,6 +141,9 @@ let of_string txt =
         end else if String.is_prefix ~affix:order_prefix line then begin
           let line = String.with_range ~first:(String.length order_prefix) line in
           (`Order (int_of_string @@ String.trim ~drop:whitespace line)) :: acc
+        end else if String.is_prefix ~affix:assume_offline_after_prefix line then begin
+          let line = String.with_range ~first:(String.length assume_offline_after_prefix) line in
+          (`Offline (int_of_string @@ String.trim ~drop:whitespace line)) :: acc
         end else acc
       ) []
     (* Merge the zones and nameservers together *)
@@ -153,7 +158,9 @@ let of_string txt =
           [], None, 0, { acc with servers = Server.Set.add server acc.servers }
         | _, _, _, `Search search ->
           zones, timeout, order, { acc with search }
-      ) ([], None, 0, { servers = Server.Set.empty; search = [] })
+        | _, _, _, `Offline n ->
+          zones, timeout, order, { acc with assume_offline_after_drops = Some n }
+      ) ([], None, 0, { servers = Server.Set.empty; search = []; assume_offline_after_drops = None })
     |> (fun (_, _, _, x) -> Result.Ok x)
   with e -> Result.Error (`Msg (Printf.sprintf "Failed to parse configuration: %s" (Printexc.to_string e)))
 
@@ -198,5 +205,6 @@ module Unix = struct
       | KeywordValue.Search names -> names @ acc
       | _ -> acc
     ) [] config |> List.rev in
-    Result.Ok { servers; search }
+    let assume_offline_after_drops = None in
+    Result.Ok { servers; search; assume_offline_after_drops }
 end

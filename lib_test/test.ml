@@ -93,7 +93,7 @@ let test_local_lookups () =
     let servers = Server.Set.of_list [
       { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
     ] in
-    let config = { servers; search = [] } in
+    let config = { servers; search = []; assume_offline_after_drops = None } in
     let open Lwt.Infix in
     let local_names_cb question =
       let open Dns.Packet in
@@ -150,7 +150,7 @@ let test_tcp_multiplexing () =
     let servers = Server.Set.of_list [
       { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
     ] in
-    let config = { servers; search = [] } in
+    let config = { servers; search = []; assume_offline_after_drops = None } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->
@@ -241,7 +241,7 @@ let test_good_bad_server () =
       { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 };
       { Server.address = bad_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 };
     ] in
-    let config = { servers; search = [] } in
+    let config = { servers; search = []; assume_offline_after_drops = None } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->
@@ -297,7 +297,7 @@ let test_bad_server () =
       { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 };
       { Server.address = bad_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 };
     ] in
-    let config = { servers; search = [] } in
+    let config = { servers; search = []; assume_offline_after_drops = None } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->
@@ -342,7 +342,7 @@ let test_timeout () =
     let servers = Server.Set.of_list [
       { Server.address = bar_address; zones = Domain.Set.empty; timeout_ms = Some 0; order = 0 }
     ] in
-    let config = { servers; search = [] } in
+    let config = { servers; search = []; assume_offline_after_drops = None } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->
@@ -389,7 +389,7 @@ let test_cache () =
     let servers = Server.Set.of_list [
       { Server.address = bar_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 }
     ] in
-    let config = { servers; search = [] } in
+    let config = { servers; search = []; assume_offline_after_drops = None } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->
@@ -445,7 +445,7 @@ let test_order () =
       { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = None; order = 1 };
       { Server.address = private_address; zones = Domain.Set.empty; timeout_ms = None; order = 0 }
     ] in
-    let config = { servers; search = [] } in
+    let config = { servers; search = []; assume_offline_after_drops = None } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->
@@ -495,7 +495,7 @@ let test_forwarder_zone () =
       { Server.address = foo_address; zones = Domain.Set.add [ "foo" ] Domain.Set.empty; timeout_ms = None; order = 0 };
       { Server.address = bar_address; zones = Domain.Set.empty; timeout_ms = None; order = 0 }
     ] in
-    let config = { servers; search = [] } in
+    let config = { servers; search = []; assume_offline_after_drops = None } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->
@@ -555,12 +555,12 @@ let config_examples = [
   { servers = Server.Set.of_list [
     { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "10.0.0.2"); port = 53 }; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
     { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "1.2.3.4"); port = 54 }; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
-    ]; search = [ "a"; "b"; "c" ]
+    ]; search = [ "a"; "b"; "c" ]; assume_offline_after_drops = None
   };
   "nameserver 10.0.0.2\n",
   { servers = Server.Set.of_list [
     { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "10.0.0.2"); port = 53 }; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
-    ]; search = []
+    ]; search = []; assume_offline_after_drops = None
   };
   String.concat "\n" [
     "# a pretend VPN zone with a private nameserver";
@@ -579,7 +579,7 @@ let config_examples = [
         timeout_ms = Some 5000;
         order = 1;
       };
-    ]; search = [];
+    ]; search = []; assume_offline_after_drops = None;
   };
 ]
 
