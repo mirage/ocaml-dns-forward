@@ -1,5 +1,5 @@
 (*
- * Copyright (C) 2016 David Scott <dave@recoil.org>
+ * Copyright (C) 2017 Docker Inc
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -15,18 +15,17 @@
  *
  *)
 
-(** An in-memory FLOW simulation *)
+(** A fake Time and Clock module for testing the timing without having to actually
+    wait. *)
 
-type address = Ipaddr.t * int
+module Time: V1_LWT.TIME
 
-include Dns_forward.Flow.Client
-  with type address := address
-include Dns_forward.Flow.Server
-  with type address := address
-   and type flow := flow
+module Clock: V1.CLOCK
 
-val get_connections: unit -> (address * int) list
-(** Return a list of [server address, number of clients still connected] *)
+val advance: float -> unit
+(** [advance nsecs]: advances the clock by [nsecs]. Note this will make sleeping
+    threads runnable but it will not wait for them to finish or even to run.
+    External synchronisation still needs to be used. *)
 
-val find_free_address: unit -> address
-(** Return an unused address suitable for listening on *)
+val reset: unit -> unit
+(** [reset ()] sets the clock back to the initial value for another test. *)

@@ -273,6 +273,86 @@ let test_good_bad_server () =
     Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   | Result.Error (`Msg m) -> failwith m
 
+(* One good one dead server should behave like the good server *)
+let test_good_dead_server () =
+  Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+  match Lwt_main.run begin
+    let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Fake.Time) in
+    let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Fake.Time) in
+    let module S = Server.Make(Proto_server) in
+    let foo_public = "8.8.8.8" in
+    (* a public server mapping 'foo' to a public ip *)
+    let public_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
+    let public_address =
+      let ip, port = Flow.find_free_address () in
+      { Dns_forward.Config.Address.ip; port } in
+    let open Error in
+    S.serve ~address:public_address public_server
+    >>= fun _ ->
+    let bad_server = S.make ~delay:30. [] in
+    let bad_address =
+      let ip, port = Flow.find_free_address () in
+      { Dns_forward.Config.Address.ip; port } in
+    S.serve ~address:bad_address bad_server
+    >>= fun _ ->
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Fake.Time)(Fake.Clock) in
+    let open Dns_forward.Config in
+    (* Forward to a good server and a bad server, both with timeouts. The request to
+       the bad request should fail fast but the good server should be given up to
+       the timeout to respond *)
+    let servers = Server.Set.of_list [
+      { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 };
+      { Server.address = bad_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 };
+    ] in
+    let config = { servers; search = []; assume_offline_after_drops = Some 1 } in
+    let open Lwt.Infix in
+    R.create config
+    >>= fun r ->
+    let request = make_a_query (Dns.Name.of_string "foo") in
+    let t = R.answer request r in
+    (* First request will trigger the internal timeout and mark the bad server
+       as offline. The sleep timeout here will only trigger if this fails. *)
+    Fake.advance 1.;
+    (* HACK: we want to let all threads run until they block but we don't have
+       an API for that. This assumes that all computation will finish in 0.1s *)
+    Lwt_unix.sleep 0.1 >>= fun () ->
+    Fake.advance 1.;
+    Lwt_unix.sleep 0.1 >>= fun () ->
+    Lwt.pick [
+      (Lwt_unix.sleep 1. >>= fun () -> Lwt.fail_with "test_good_dead_server: initial request had no response");
+      t >>= fun _ -> Lwt.return_unit
+    ]
+    >>= fun () ->
+    (* The bad server should be marked offline and no-one will wait for it *)
+    Fake.reset ();
+    Fake.advance 0.5; (* avoid the timeouts winning the race with the actual result *)
+    let request =
+      R.answer request r
+      >>= function
+      | Result.Ok reply ->
+        let len = Cstruct.len reply in
+        let buf = Dns.Buf.of_cstruct reply in
+        begin match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
+        | Some { Dns.Packet.answers = _ :: _ ; _ } -> Lwt.return_true
+        | Some packet -> failwith ("test_good_dead_server bad response: " ^ (Dns.Packet.to_string packet))
+        | None -> failwith "test_good_dead_server: failed to parse response"
+        end
+      | Result.Error _ -> failwith "test_good_dead_server timeout: did the failure overtake the success?" in
+    let timeout =
+      Lwt_unix.sleep 5.
+      >>= fun () ->
+      Lwt.return false in
+    Lwt.pick [ request; timeout ]
+    >>= fun ok ->
+    if not ok then failwith "test_good_dead_server hit timeout";
+    R.destroy r
+    >>= fun () ->
+    Lwt.return (Result.Ok ())
+  end with
+  | Result.Ok () ->
+    Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+  | Result.Error (`Msg m) -> failwith m
+
 (* One bad server should be ignored *)
 let test_bad_server () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
@@ -546,6 +626,7 @@ let test_forwarder_set = [
   "Server order", `Quick, test_order;
   "Caching", `Quick, test_cache;
   "Tolerate bad server", `Quick, test_good_bad_server;
+  "Tolerate broken server", `Quick, test_good_dead_server;
 ]
 
 open Dns_forward.Config
