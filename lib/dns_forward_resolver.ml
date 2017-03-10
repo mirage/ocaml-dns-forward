@@ -156,6 +156,11 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
                 (* If no timeout is configured, we will stop listening after
                    5s to avoid leaking threads if a server is offline *)
                 let timeout_ms = match server.Server.timeout_ms with None -> 5000 | Some x -> x in
+                (* If no assume_offline_after_drops is configured then set this
+                   to 5s. *)
+                let assume_offline_after_drops = match t.config.assume_offline_after_drops with
+                  | Some c -> c
+                  | None -> 5 in
                 (* Within the overall timeout_ms (configured by the user) we will send
                    the request at 1s intervals to guard against packet drops. *)
                 let delays_ms =
@@ -175,13 +180,11 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
                 | Error x ->
                   if c.reply_expected_since = None then c.reply_expected_since <- Some now;
                   c.replies_missing <- c.replies_missing + (List.length delays_ms);
-                  begin match t.config.assume_offline_after_drops with
-                    | Some d when d < c.replies_missing ->
-                      Log.err (fun f -> f "Upstream DNS server %s has dropped %d packets in a row: assuming it's offline"
-                        (Dns_forward_config.Address.to_string address) c.replies_missing
-                      );
-                      c.online <- false
-                    | _ -> ()
+                  if assume_offline_after_drops < c.replies_missing then begin
+                    Log.err (fun f -> f "Upstream DNS server %s has dropped %d packets in a row: assuming it's offline"
+                      (Dns_forward_config.Address.to_string address) c.replies_missing
+                    );
+                    c.online <- false
                   end;
                   Lwt.return (Error x)
                 | Ok reply ->
