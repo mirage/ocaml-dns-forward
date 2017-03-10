@@ -206,17 +206,36 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
                   end
               end in
 
-          let threads =
-            (* Filter the list of servers using any "zone" setting -- this will
+          (* Ask many servers but first
+             - Filter the list of servers using any "zone" setting -- this will
                prevent queries for private names being leaked to public servers
                (if configured).
-               Group the servers into lists of equal priorities. *)
-            choose_servers (List.map (fun c -> c.server) t.connections) request
-            |>
+             - Group the servers into lists of equal priorities.
+             - Send all the requests concurrently. *)
+          let many_rpcs connections =
+            let equal_priority_groups = choose_servers (List.map (fun c -> c.server) connections) request  in
             (* Send all requests in parallel to minimise the chance of hitting a
                timeout. Positive replies will be cached, but servers which don't
                recognise the name will be queried each time. *)
-            List.map (List.map one_rpc) in
+            List.map (List.map one_rpc) equal_priority_groups in
+
+          let online, offline = List.partition (fun c -> c.online) t.connections in
+          if online = [] then begin
+            let open Dns_forward_config in
+            Log.warn (fun f -> f "There are no online DNS servers configured.");
+            Log.warn (fun f -> f "DNS servers %s are all marked offline"
+              (String.concat ", " (List.map (fun c -> Address.to_string @@ c.server.Server.address) offline))
+            )
+          end;
+          (* For all the offline servers, send the requests as a "ping" to see
+             if they are alive or not. Any response will flip them back to online
+             but we won't consider their responses until the next RPC *)
+          let _ = many_rpcs offline in
+
+          (* For all the online servers, send the requests and return the waiting
+             threads. *)
+          let online_results = many_rpcs online in
+
           (* Wait for the best result from a set of equal priority requests *)
           let rec wait best_so_far remaining =
             if remaining = []
@@ -256,7 +275,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
             (fun best_so_far next -> match best_so_far with
               | Ok (`Success result) -> Lwt.return (Ok (`Success result))
               | best_so_far -> wait best_so_far next
-            ) (Error (`Msg "no servers configured")) threads
+            ) (Error (`Msg "no servers configured")) online_results
           >>= function
           | Ok (`Success reply) -> Lwt_result.return reply
           | Ok (`Failure (_, reply)) -> Lwt_result.return reply
