@@ -1,3 +1,10 @@
+### 0.8.2 (2017-03-10)
+
+- add global configuration option `assume-offline-after-drops` which tells the resolver to consider an upstream offline if it fails to respond to this number of queries in a row
+- when a server is offline we continue to send queries to it, but we don't wait for responses. This prevents a bad server making us wait until timeout on every request.
+- we use `Lwt.nchoose_split` to wait for equal-priority results at once: this avoids waiting for requests in arbitrary list order (previously we used `Lwt.fold_left_s`)
+- we resend requests every 1s even if the timeout is longer
+
 ### 0.8.1 (2017-02-06)
 
 - always set the Recursion Available bit from cached responses

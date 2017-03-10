@@ -123,6 +123,12 @@ let connect ?read_buffer_size:_ address =
     Lwt.return (Result.Ok flow)
   end else errorf "connect: no server bound to %s" (string_of_address address)
 
+let find_free_address () =
+  let rec loop port =
+    let address = Ipaddr.V4 Ipaddr.V4.localhost, port in
+    if Hashtbl.mem bound address then loop (port + 1) else address  in
+  loop 0
+
 let bind address =
   let listen_cb _ = Lwt.return (Result.Error (`Msg "no callback")) in
   let server = { listen_cb; address } in

@@ -156,6 +156,8 @@ module Config: sig
   type t = {
     servers: Server.Set.t; (** Upstream DNS servers *)
     search: string list;   (** Ordered list of domains to search *)
+    assume_offline_after_drops: int option;
+    (** Once this number of drops have happened, assume the server is offline *)
   } [@@deriving sexp]
   (** A DNS configuration *)
 
@@ -284,7 +286,7 @@ module Resolver: sig
         should be prepared to timeout and cancel the thread. *)
   end
 
-  module Make(Client: Rpc.Client.S)(Time: V1_LWT.TIME): S
+  module Make(Client: Rpc.Client.S)(Time: V1_LWT.TIME)(Clock: V1.CLOCK): S
   (** Construct a DNS resolver which will use the given [Client] Implementation
       to contact upstream servers, and the given [Time] implementation to handle
       timeouts. *)

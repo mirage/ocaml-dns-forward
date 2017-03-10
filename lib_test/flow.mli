@@ -27,3 +27,6 @@ include Dns_forward.Flow.Server
 
 val get_connections: unit -> (address * int) list
 (** Return a list of [server address, number of clients still connected] *)
+
+val find_free_address: unit -> address
+(** Return an unused address suitable for listening on *)

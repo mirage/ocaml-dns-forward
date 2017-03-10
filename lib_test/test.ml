@@ -1,5 +1,6 @@
 
 module Error = Dns_forward.Error.Infix
+module Clock = Dns_forward_lwt_unix.Clock
 
 let fresh_id =
   let next = ref 1000 in
@@ -87,12 +88,12 @@ let test_local_lookups () =
     let open Error in
     S.serve ~address:public_address public_server
     >>= fun _ ->
-    let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
+    let module R = Dns_forward.Resolver.Make(Rpc)(Time)(Clock) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
       { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
     ] in
-    let config = { servers; search = [] } in
+    let config = { servers; search = []; assume_offline_after_drops = None } in
     let open Lwt.Infix in
     let local_names_cb question =
       let open Dns.Packet in
@@ -144,12 +145,12 @@ let test_tcp_multiplexing () =
     let open Error in
     S.serve ~address:public_address public_server
     >>= fun _ ->
-    let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
       { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
     ] in
-    let config = { servers; search = [] } in
+    let config = { servers; search = []; assume_offline_after_drops = None } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->
@@ -231,7 +232,7 @@ let test_good_bad_server () =
     let bad_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 999 } in
     S.serve ~address:bad_address bad_server
     >>= fun _ ->
-    let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
     let open Dns_forward.Config in
     (* Forward to a good server and a bad server, both with timeouts. The request to
        the bad request should fail fast but the good server should be given up to
@@ -240,7 +241,7 @@ let test_good_bad_server () =
       { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 };
       { Server.address = bad_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 };
     ] in
-    let config = { servers; search = [] } in
+    let config = { servers; search = []; assume_offline_after_drops = None } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->
@@ -272,6 +273,86 @@ let test_good_bad_server () =
     Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   | Result.Error (`Msg m) -> failwith m
 
+(* One good one dead server should behave like the good server *)
+let test_good_dead_server () =
+  Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+  match Lwt_main.run begin
+    let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Fake.Time) in
+    let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Fake.Time) in
+    let module S = Server.Make(Proto_server) in
+    let foo_public = "8.8.8.8" in
+    (* a public server mapping 'foo' to a public ip *)
+    let public_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
+    let public_address =
+      let ip, port = Flow.find_free_address () in
+      { Dns_forward.Config.Address.ip; port } in
+    let open Error in
+    S.serve ~address:public_address public_server
+    >>= fun _ ->
+    let bad_server = S.make ~delay:30. [] in
+    let bad_address =
+      let ip, port = Flow.find_free_address () in
+      { Dns_forward.Config.Address.ip; port } in
+    S.serve ~address:bad_address bad_server
+    >>= fun _ ->
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Fake.Time)(Fake.Clock) in
+    let open Dns_forward.Config in
+    (* Forward to a good server and a bad server, both with timeouts. The request to
+       the bad request should fail fast but the good server should be given up to
+       the timeout to respond *)
+    let servers = Server.Set.of_list [
+      { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 };
+      { Server.address = bad_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 };
+    ] in
+    let config = { servers; search = []; assume_offline_after_drops = Some 1 } in
+    let open Lwt.Infix in
+    R.create config
+    >>= fun r ->
+    let request = make_a_query (Dns.Name.of_string "foo") in
+    let t = R.answer request r in
+    (* First request will trigger the internal timeout and mark the bad server
+       as offline. The sleep timeout here will only trigger if this fails. *)
+    Fake.advance 1.;
+    (* HACK: we want to let all threads run until they block but we don't have
+       an API for that. This assumes that all computation will finish in 0.1s *)
+    Lwt_unix.sleep 0.1 >>= fun () ->
+    Fake.advance 1.;
+    Lwt_unix.sleep 0.1 >>= fun () ->
+    Lwt.pick [
+      (Lwt_unix.sleep 1. >>= fun () -> Lwt.fail_with "test_good_dead_server: initial request had no response");
+      t >>= fun _ -> Lwt.return_unit
+    ]
+    >>= fun () ->
+    (* The bad server should be marked offline and no-one will wait for it *)
+    Fake.reset ();
+    Fake.advance 0.5; (* avoid the timeouts winning the race with the actual result *)
+    let request =
+      R.answer request r
+      >>= function
+      | Result.Ok reply ->
+        let len = Cstruct.len reply in
+        let buf = Dns.Buf.of_cstruct reply in
+        begin match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
+        | Some { Dns.Packet.answers = _ :: _ ; _ } -> Lwt.return_true
+        | Some packet -> failwith ("test_good_dead_server bad response: " ^ (Dns.Packet.to_string packet))
+        | None -> failwith "test_good_dead_server: failed to parse response"
+        end
+      | Result.Error _ -> failwith "test_good_dead_server timeout: did the failure overtake the success?" in
+    let timeout =
+      Lwt_unix.sleep 5.
+      >>= fun () ->
+      Lwt.return false in
+    Lwt.pick [ request; timeout ]
+    >>= fun ok ->
+    if not ok then failwith "test_good_dead_server hit timeout";
+    R.destroy r
+    >>= fun () ->
+    Lwt.return (Result.Ok ())
+  end with
+  | Result.Ok () ->
+    Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+  | Result.Error (`Msg m) -> failwith m
+
 (* One bad server should be ignored *)
 let test_bad_server () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
@@ -286,7 +367,7 @@ let test_bad_server () =
     let open Error in
     S.serve ~address:public_address public_server
     >>= fun _ ->
-    let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
     let open Dns_forward.Config in
     let bad_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 999 } in
     (* Forward to a good server and a bad server, both with timeouts. The request to
@@ -296,7 +377,7 @@ let test_bad_server () =
       { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 };
       { Server.address = bad_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 };
     ] in
-    let config = { servers; search = [] } in
+    let config = { servers; search = []; assume_offline_after_drops = None } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->
@@ -336,12 +417,12 @@ let test_timeout () =
     S.serve ~address:bar_address bar_server
     >>= fun _ ->
     (* a resolver which uses both servers *)
-    let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
       { Server.address = bar_address; zones = Domain.Set.empty; timeout_ms = Some 0; order = 0 }
     ] in
-    let config = { servers; search = [] } in
+    let config = { servers; search = []; assume_offline_after_drops = None } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->
@@ -383,12 +464,12 @@ let test_cache () =
     S.serve ~address:bar_address bar_server
     >>= fun server ->
     (* a resolver which uses both servers *)
-    let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
       { Server.address = bar_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 }
     ] in
-    let config = { servers; search = [] } in
+    let config = { servers; search = []; assume_offline_after_drops = None } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->
@@ -438,13 +519,13 @@ let test_order () =
     >>= fun _ ->
 
     (* a resolver which uses both servers *)
-    let module R = Dns_forward.Resolver.Make(Proto_client)(Time) in
+    let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
       { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = None; order = 1 };
       { Server.address = private_address; zones = Domain.Set.empty; timeout_ms = None; order = 0 }
     ] in
-    let config = { servers; search = [] } in
+    let config = { servers; search = []; assume_offline_after_drops = None } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->
@@ -488,13 +569,13 @@ let test_forwarder_zone () =
     S.serve ~address:bar_address bar_server
     >>= fun _ ->
     (* a resolver which uses both servers *)
-    let module R = Dns_forward.Resolver.Make(Rpc)(Time) in
+    let module R = Dns_forward.Resolver.Make(Rpc)(Time)(Clock) in
     let open Dns_forward.Config in
     let servers = Server.Set.of_list [
       { Server.address = foo_address; zones = Domain.Set.add [ "foo" ] Domain.Set.empty; timeout_ms = None; order = 0 };
       { Server.address = bar_address; zones = Domain.Set.empty; timeout_ms = None; order = 0 }
     ] in
-    let config = { servers; search = [] } in
+    let config = { servers; search = []; assume_offline_after_drops = None } in
     let open Lwt.Infix in
     R.create config
     >>= fun r ->
@@ -545,6 +626,7 @@ let test_forwarder_set = [
   "Server order", `Quick, test_order;
   "Caching", `Quick, test_cache;
   "Tolerate bad server", `Quick, test_good_bad_server;
+  "Tolerate broken server", `Quick, test_good_dead_server;
 ]
 
 open Dns_forward.Config
@@ -554,12 +636,12 @@ let config_examples = [
   { servers = Server.Set.of_list [
     { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "10.0.0.2"); port = 53 }; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
     { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "1.2.3.4"); port = 54 }; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
-    ]; search = [ "a"; "b"; "c" ]
+    ]; search = [ "a"; "b"; "c" ]; assume_offline_after_drops = None
   };
   "nameserver 10.0.0.2\n",
   { servers = Server.Set.of_list [
     { Server.address = { Address.ip = Ipaddr.V4 (Ipaddr.V4.of_string_exn "10.0.0.2"); port = 53 }; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
-    ]; search = []
+    ]; search = []; assume_offline_after_drops = None
   };
   String.concat "\n" [
     "# a pretend VPN zone with a private nameserver";
@@ -578,7 +660,7 @@ let config_examples = [
         timeout_ms = Some 5000;
         order = 1;
       };
-    ]; search = [];
+    ]; search = []; assume_offline_after_drops = None;
   };
 ]
 

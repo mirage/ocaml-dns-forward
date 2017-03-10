@@ -1,5 +1,5 @@
 (*
- * Copyright (C) 2016 David Scott <dave@recoil.org>
+ * Copyright (C) 2017 Docker Inc
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -15,22 +15,17 @@
  *
  *)
 
-(** DNS utilities over Lwt_unix *)
+(** A fake Time and Clock module for testing the timing without having to actually
+    wait. *)
 
-module Resolver: sig
-  module Udp: Dns_forward.Resolver.S
-  (** A DNS resolver over UDP *)
-
-  module Tcp: Dns_forward.Resolver.S
-  (** A DNS resolver over TCP *)
-end
-
-module Server: sig
-  module Udp: Dns_forward.Server.S with type resolver = Resolver.Udp.t
-  (** A forwarding DNS proxy over UDP *)
-
-  module Tcp: Dns_forward.Server.S with type resolver = Resolver.Tcp.t
-  (** A forwarding DNS proxy over TCP *)
-end
+module Time: V1_LWT.TIME
 
 module Clock: V1.CLOCK
+
+val advance: float -> unit
+(** [advance nsecs]: advances the clock by [nsecs]. Note this will make sleeping
+    threads runnable but it will not wait for them to finish or even to run.
+    External synchronisation still needs to be used. *)
+
+val reset: unit -> unit
+(** [reset ()] sets the clock back to the initial value for another test. *)
