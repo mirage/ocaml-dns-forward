@@ -1,3 +1,8 @@
+### 0.8.3 (2017-03-12)
+
+- if we fail to resolve a name, return NXDomain rather than simply timing out
+- avoid logging per-request if no servers are configured at all
+
 ### 0.8.2 (2017-03-10)
 
 - add global configuration option `assume-offline-after-drops` which tells the resolver to consider an upstream offline if it fails to respond to this number of queries in a row
