@@ -180,7 +180,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
                 | Error x ->
                   if c.reply_expected_since = None then c.reply_expected_since <- Some now;
                   c.replies_missing <- c.replies_missing + (List.length delays_ms);
-                  if assume_offline_after_drops < c.replies_missing then begin
+                  if assume_offline_after_drops < c.replies_missing && c.online then begin
                     Log.err (fun f -> f "Upstream DNS server %s has dropped %d packets in a row: assuming it's offline"
                       (Dns_forward_config.Address.to_string address) c.replies_missing
                     );
