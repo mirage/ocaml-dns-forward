@@ -120,23 +120,33 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
     let open Dns.Packet in
     match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
     | Some ({ questions = [ question ]; _ } as request) ->
+
+      let marshal pkt =
+        let buf = Dns.Buf.create 1024 in
+        let buf = marshal buf pkt in
+        Cstruct.of_bigarray buf in
+
       (* Given a set of answers (resource records), synthesize an answer to the
          current question. *)
-      let marshal_reply answers =
+      let reply answers =
         let id = request.id in
         let detail = { request.detail with Dns.Packet.qr = Dns.Packet.Response; ra = true } in
         let questions = request.questions in
         let authorities = [] and additionals = [] in
-        let pkt = { id; detail; questions; answers; authorities; additionals } in
-        let buf = Dns.Buf.create 1024 in
-        let buf = marshal buf pkt in
-        Cstruct.of_bigarray buf in
+        { id; detail; questions; answers; authorities; additionals } in
+
+      let nxdomain =
+        let id = request.id in
+        let detail = { request.detail with Dns.Packet.qr = Dns.Packet.Response; ra = true; rcode = Dns.Packet.NXDomain } in
+        let questions = request.questions in
+        let authorities = [] and additionals = [] and answers = [] in
+        { id; detail; questions; answers; authorities; additionals } in
 
       (* Look for any local answers to this question *)
       begin
         t.local_names_cb question
         >>= function
-        | Some answers -> Lwt_result.return (marshal_reply answers)
+        | Some answers -> Lwt_result.return (marshal @@ reply answers)
         | None ->
           (* Ask one server, with caching. Possible results are:
             Ok (`Success buf): succesful reply
@@ -148,7 +158,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
             let address = server.Server.address in
             (* Look in the cache *)
             match Cache.answer t.cache address question with
-            | Some answers -> Lwt.return (Ok (`Success (marshal_reply answers)))
+            | Some answers -> Lwt.return (Ok (`Success (marshal @@ reply answers)))
             | None ->
               let c = List.find (fun c -> c.server = server) t.connections in
               begin
@@ -223,7 +233,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
             List.map (List.map one_rpc) equal_priority_groups in
 
           let online, offline = List.partition (fun c -> c.online) t.connections in
-          if online = [] then begin
+          if online = [] && t.connections <> [] then begin
             let open Dns_forward_config in
             Log.warn (fun f -> f "There are no online DNS servers configured.");
             Log.warn (fun f -> f "DNS servers %s are all marked offline"
@@ -278,7 +288,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
             (fun best_so_far next -> match best_so_far with
               | Ok (`Success result) -> Lwt.return (Ok (`Success result))
               | best_so_far -> wait best_so_far next
-            ) (Error (`Msg "no servers configured")) online_results
+            ) (Ok (`Failure (Some nxdomain, marshal nxdomain))) online_results
           >>= function
           | Ok (`Success reply) -> Lwt_result.return reply
           | Ok (`Failure (_, reply)) -> Lwt_result.return reply
