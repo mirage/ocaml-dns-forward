@@ -1,5 +1,5 @@
 description = "A DNS forwarding library"
-version = "0.8.2"
+version = "0.8.3"
 requires = "lwt logs fmt astring rresult cstruct mirage-flow channel mtime sexplib ipaddr dns"
 archive(byte) = "dns-forward.cma"
 archive(native) = "dns-forward.cmxa"
@@ -9,7 +9,7 @@ exists_if = "dns-forward.cma"
 
 package "lwt-unix" (
  description = "Lwt_unix I/O library"
- version = "0.8.2"
+ version = "0.8.3"
  requires = "io-page.unix dns-forward lwt.unix lwt logs rresult cstruct cstruct.lwt ipaddr"
  archive(byte) = "dns-forward-lwt-unix.cma"
  archive(native) = "dns-forward-lwt-unix.cmxa"
