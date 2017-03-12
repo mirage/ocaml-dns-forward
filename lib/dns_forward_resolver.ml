@@ -233,7 +233,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
             List.map (List.map one_rpc) equal_priority_groups in
 
           let online, offline = List.partition (fun c -> c.online) t.connections in
-          if online = [] then begin
+          if online = [] && t.connections <> [] then begin
             let open Dns_forward_config in
             Log.warn (fun f -> f "There are no online DNS servers configured.");
             Log.warn (fun f -> f "DNS servers %s are all marked offline"
