@@ -15,7 +15,9 @@
  *
  *)
 open Dns_forward
-let errorf = Dns_forward_error.errorf
+module Error = Error.Infix
+
+let errorf fmt = Printf.ksprintf (fun s -> Lwt.return (Result.Error (`Msg s))) fmt
 
 type request = Cstruct.t
 type response = Cstruct.t
