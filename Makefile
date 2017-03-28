@@ -1,16 +1,17 @@
-TESTS = true
 
-.PHONY: all clean test bundle COMMIT exe
+.PHONY: build clean test
 
-all: dns-forwarder
-	@
-
-dns-forwarder:
-	ocaml pkg/pkg.ml build --tests $(TESTS) -q
-
-clean:
-	ocaml pkg/pkg.ml clean
+build:
+	jbuilder build @install
 
 test:
-	ocaml pkg/pkg.ml build --tests true
-	ocaml pkg/pkg.ml test
+	jbuilder runtest
+
+install:
+	jbuilder install
+
+uninstall:
+	jbuilder uninstall
+
+clean:
+	rm -rf _build

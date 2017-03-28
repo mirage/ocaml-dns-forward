@@ -14,10 +14,11 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
-open Dns_forward
 
+open Dns_forward
 module Error = Error.Infix
-let errorf = Dns_forward_error.errorf
+
+let errorf fmt = Printf.ksprintf (fun s -> Lwt.return (Result.Error (`Msg s))) fmt
 
 type buffer = Cstruct.t
 type address = Ipaddr.t * int
