@@ -1,3 +1,9 @@
+### 0.8.4 (2017-03-28)
+
+- if we fail to resolver a name, timeout rather than sending NXDomain
+- switch to jbuilder
+- split into 2 opam packages: `dns-forward` and `dns-forward-lwt-unix`
+
 ### 0.8.3 (2017-03-12)
 
 - if we fail to resolve a name, return NXDomain rather than simply timing out
