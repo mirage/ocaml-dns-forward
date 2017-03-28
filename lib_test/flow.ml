@@ -25,7 +25,7 @@ type address = Ipaddr.t * int
 let string_of_address (ip, port) = Ipaddr.to_string ip ^ ":" ^ (string_of_int port)
 type error = [ `Msg of string ]
 let error_message = function
-  | `Msg x -> x
+| `Msg x -> x
 
 type 'a io = 'a Lwt.t
 
@@ -144,12 +144,12 @@ let listen server (cb: flow -> unit Lwt.t) =
     let flow = openflow server.address in
     Lwt.async
       (fun () ->
-        Lwt.catch
-          (fun () ->
-            cb (otherend flow)
-          ) (fun _e ->
-            Lwt.return_unit
-          )
+         Lwt.catch
+           (fun () ->
+              cb (otherend flow)
+           ) (fun _e ->
+               Lwt.return_unit
+             )
       );
     Lwt.return (Result.Ok flow) in
   server.listen_cb <- listen_cb

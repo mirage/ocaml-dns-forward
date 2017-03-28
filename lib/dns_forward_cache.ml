@@ -73,8 +73,8 @@ module Make(Time: V1_LWT.TIME) = struct
     if Question.Map.cardinal t.cache >= t.max_bindings then begin
       let choice = Random.int (Question.Map.cardinal t.cache) in
       match Question.Map.fold (fun question _ (i, existing) ->
-        i + 1, if i = choice then Some question else existing
-      ) t.cache (0, None) with
+          i + 1, if i = choice then Some question else existing
+        ) t.cache (0, None) with
       | _, None -> (* should never happen *) ()
       | _, Some question -> remove t question
     end;
