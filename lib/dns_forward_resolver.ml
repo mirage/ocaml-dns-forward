@@ -135,13 +135,6 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
         let authorities = [] and additionals = [] in
         { id; detail; questions; answers; authorities; additionals } in
 
-      let nxdomain =
-        let id = request.id in
-        let detail = { request.detail with Dns.Packet.qr = Dns.Packet.Response; ra = true; rcode = Dns.Packet.NXDomain } in
-        let questions = request.questions in
-        let authorities = [] and additionals = [] and answers = [] in
-        { id; detail; questions; answers; authorities; additionals } in
-
       (* Look for any local answers to this question *)
       begin
         t.local_names_cb question
@@ -288,7 +281,7 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
             (fun best_so_far next -> match best_so_far with
               | Ok (`Success result) -> Lwt.return (Ok (`Success result))
               | best_so_far -> wait best_so_far next
-            ) (Ok (`Failure (Some nxdomain, marshal nxdomain))) online_results
+            )  (Error (`Msg "no servers configured")) online_results
           >>= function
           | Ok (`Success reply) -> Lwt_result.return reply
           | Ok (`Failure (_, reply)) -> Lwt_result.return reply

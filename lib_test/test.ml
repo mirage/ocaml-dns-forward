@@ -430,11 +430,8 @@ let test_timeout () =
     let request =
       R.answer request r
       >>= function
-      | Result.Ok response ->
-        let open Dns.Packet in
-        let pkt = parse (Cstruct.to_bigarray response) in
-        Lwt.return (pkt.detail.rcode = NXDomain)
-      | Result.Error _ -> failwith "timeout test failed" in
+      | Result.Error _ -> Lwt.return true
+      | Result.Ok _ -> failwith "got a result when timeout expected" in
     let timeout =
       Lwt_unix.sleep 5.
       >>= fun () ->
