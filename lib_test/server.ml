@@ -40,44 +40,44 @@ module Make(Server: Rpc.Server.S) = struct
     let buf = Dns.Buf.of_cstruct buffer in
     match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
     | Some request ->
-      let open Dns.Packet in
-      begin match request with
+        let open Dns.Packet in
+        begin match request with
         | { id; detail; additionals; questions = [ { q_class = Q_IN; q_type = Q_A; q_name; _ } ]; _ } ->
-          begin match List.fold_left (fun found (name, ip) -> match found, ip with
-            | Some v4, _           -> Some v4
-            | None,   Ipaddr.V4 v4 ->
-              if Dns.Name.to_string q_name = name then Some v4 else None
-            | None,   Ipaddr.V6 _  -> None
-          ) None t.names with
-          | None ->
-            let answers = [] in
-            let detail = { detail with
-              Dns.Packet.qr = Dns.Packet.Response;
-              rcode = Dns.Packet.NXDomain
-            } in
-            let questions = match t.simulate_bad_question with
-              | true -> [ bad_question ]
-              | false -> request.questions in
-            let pkt = { Dns.Packet.id; detail; questions; authorities=[]; additionals; answers } in
-            let buf = Dns.Buf.create 1024 in
-            let buf = marshal buf pkt in
-            Lwt.return (Result.Ok (Cstruct.of_bigarray buf))
-          | Some v4 ->
-            let answers = [ { name = q_name; cls = RR_IN; flush = false; ttl = 0l; rdata = A v4 } ] in
-            let detail = { detail with Dns.Packet.qr = Dns.Packet.Response } in
-            let questions = match t.simulate_bad_question with
-              | true -> [ bad_question ]
-              | false -> request.questions in
-            let pkt = { Dns.Packet.id; detail; questions; authorities=[]; additionals; answers } in
-            let buf = Dns.Buf.create 1024 in
-            let buf = marshal buf pkt in
-            Lwt.return (Result.Ok (Cstruct.of_bigarray buf))
-          end
+            begin match List.fold_left (fun found (name, ip) -> match found, ip with
+              | Some v4, _           -> Some v4
+              | None,   Ipaddr.V4 v4 ->
+                  if Dns.Name.to_string q_name = name then Some v4 else None
+              | None,   Ipaddr.V6 _  -> None
+              ) None t.names with
+            | None ->
+                let answers = [] in
+                let detail = { detail with
+                               Dns.Packet.qr = Dns.Packet.Response;
+                               rcode = Dns.Packet.NXDomain
+                             } in
+                let questions = match t.simulate_bad_question with
+                | true -> [ bad_question ]
+                | false -> request.questions in
+                let pkt = { Dns.Packet.id; detail; questions; authorities=[]; additionals; answers } in
+                let buf = Dns.Buf.create 1024 in
+                let buf = marshal buf pkt in
+                Lwt.return (Result.Ok (Cstruct.of_bigarray buf))
+            | Some v4 ->
+                let answers = [ { name = q_name; cls = RR_IN; flush = false; ttl = 0l; rdata = A v4 } ] in
+                let detail = { detail with Dns.Packet.qr = Dns.Packet.Response } in
+                let questions = match t.simulate_bad_question with
+                | true -> [ bad_question ]
+                | false -> request.questions in
+                let pkt = { Dns.Packet.id; detail; questions; authorities=[]; additionals; answers } in
+                let buf = Dns.Buf.create 1024 in
+                let buf = marshal buf pkt in
+                Lwt.return (Result.Ok (Cstruct.of_bigarray buf))
+            end
         | _ ->
-          Lwt.return (Result.Error (`Msg "unexpected query type"))
-      end
+            Lwt.return (Result.Error (`Msg "unexpected query type"))
+        end
     | None ->
-      Lwt.return (Result.Error (`Msg "failed to parse request"))
+        Lwt.return (Result.Error (`Msg "failed to parse request"))
 
   type server = Server.server
 

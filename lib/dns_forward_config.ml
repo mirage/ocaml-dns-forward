@@ -113,38 +113,38 @@ let of_string txt =
     |> List.filter (fun x -> x <> "")
     |> List.fold_left
       (fun acc line ->
-        if String.is_prefix ~affix:nameserver_prefix line then begin
-          let line = String.with_range ~first:(String.length nameserver_prefix) line in
-          if String.cut ~sep:"::" line <> None then begin
-            (* IPv6 *)
-            let host = Ipaddr.V6.of_string_exn line in
-            (`Nameserver (Ipaddr.V6 host, 53)) :: acc
-          end else match String.cut ~sep:"#" line with
-            | Some (host, port) ->
-              (* IPv4 with non-standard port *)
-              let host = Ipaddr.V4.of_string_exn host in
-              let port = int_of_string port in
-              (`Nameserver (Ipaddr.V4 host, port)) :: acc
-            | None ->
-              (* IPv4 with standard port *)
-              let host = Ipaddr.V4.of_string_exn line in
-              (`Nameserver (Ipaddr.V4 host, 53)) :: acc
-        end else if String.is_prefix ~affix:zone_prefix line then begin
-          let line = String.with_range ~first:(String.length zone_prefix) line in
-          (`Zones (String.cuts ~sep:" " line)) :: acc
-        end else if String.is_prefix ~affix:search_prefix line then begin
-          let line = String.with_range ~first:(String.length search_prefix) line in
-          (`Search (String.cuts ~sep:" " line)) :: acc
-        end else if String.is_prefix ~affix:timeout_prefix line then begin
-          let line = String.with_range ~first:(String.length timeout_prefix) line in
-          (`Timeout (int_of_string @@ String.trim ~drop:whitespace line)) :: acc
-        end else if String.is_prefix ~affix:order_prefix line then begin
-          let line = String.with_range ~first:(String.length order_prefix) line in
-          (`Order (int_of_string @@ String.trim ~drop:whitespace line)) :: acc
-        end else if String.is_prefix ~affix:assume_offline_after_prefix line then begin
-          let line = String.with_range ~first:(String.length assume_offline_after_prefix) line in
-          (`Offline (int_of_string @@ String.trim ~drop:whitespace line)) :: acc
-        end else acc
+         if String.is_prefix ~affix:nameserver_prefix line then begin
+           let line = String.with_range ~first:(String.length nameserver_prefix) line in
+           if String.cut ~sep:"::" line <> None then begin
+             (* IPv6 *)
+             let host = Ipaddr.V6.of_string_exn line in
+             (`Nameserver (Ipaddr.V6 host, 53)) :: acc
+           end else match String.cut ~sep:"#" line with
+           | Some (host, port) ->
+               (* IPv4 with non-standard port *)
+               let host = Ipaddr.V4.of_string_exn host in
+               let port = int_of_string port in
+               (`Nameserver (Ipaddr.V4 host, port)) :: acc
+           | None ->
+               (* IPv4 with standard port *)
+               let host = Ipaddr.V4.of_string_exn line in
+               (`Nameserver (Ipaddr.V4 host, 53)) :: acc
+         end else if String.is_prefix ~affix:zone_prefix line then begin
+           let line = String.with_range ~first:(String.length zone_prefix) line in
+           (`Zones (String.cuts ~sep:" " line)) :: acc
+         end else if String.is_prefix ~affix:search_prefix line then begin
+           let line = String.with_range ~first:(String.length search_prefix) line in
+           (`Search (String.cuts ~sep:" " line)) :: acc
+         end else if String.is_prefix ~affix:timeout_prefix line then begin
+           let line = String.with_range ~first:(String.length timeout_prefix) line in
+           (`Timeout (int_of_string @@ String.trim ~drop:whitespace line)) :: acc
+         end else if String.is_prefix ~affix:order_prefix line then begin
+           let line = String.with_range ~first:(String.length order_prefix) line in
+           (`Order (int_of_string @@ String.trim ~drop:whitespace line)) :: acc
+         end else if String.is_prefix ~affix:assume_offline_after_prefix line then begin
+           let line = String.with_range ~first:(String.length assume_offline_after_prefix) line in
+           (`Offline (int_of_string @@ String.trim ~drop:whitespace line)) :: acc
+         end else acc
       ) []
     (* Merge the zones and nameservers together *)
     |> List.fold_left
@@ -153,30 +153,30 @@ let of_string txt =
         | zones, _, order, `Timeout timeout -> zones, Some timeout, order, acc
         | zones, timeout, _, `Order order -> zones, timeout, order, acc
         | zones, timeout_ms, order, `Nameserver (ip, port) ->
-          let zones = List.map (String.cuts ~sep:"." ?rev:None ?empty:None) zones |> Domain.Set.of_list in
-          let server = { Server.address = { Address.ip; port }; zones; timeout_ms; order } in
-          [], None, 0, { acc with servers = Server.Set.add server acc.servers }
+            let zones = List.map (String.cuts ~sep:"." ?rev:None ?empty:None) zones |> Domain.Set.of_list in
+            let server = { Server.address = { Address.ip; port }; zones; timeout_ms; order } in
+            [], None, 0, { acc with servers = Server.Set.add server acc.servers }
         | _, _, _, `Search search ->
-          zones, timeout, order, { acc with search }
+            zones, timeout, order, { acc with search }
         | _, _, _, `Offline n ->
-          zones, timeout, order, { acc with assume_offline_after_drops = Some n }
+            zones, timeout, order, { acc with assume_offline_after_drops = Some n }
       ) ([], None, 0, { servers = Server.Set.empty; search = []; assume_offline_after_drops = None })
     |> (fun (_, _, _, x) -> Result.Ok x)
   with e -> Result.Error (`Msg (Printf.sprintf "Failed to parse configuration: %s" (Printexc.to_string e)))
 
 let to_string t =
   let nameservers = Server.Set.fold
-    (fun server acc ->
-      [ nameserver_prefix ^ (Ipaddr.to_string server.Server.address.Address.ip) ^ "#" ^ (string_of_int server.Server.address.Address.port) ]
-      @ (if server.Server.zones <> Domain.Set.empty then [ zone_prefix ^ (String.concat " " @@ List.map Domain.to_string @@ Domain.Set.elements server.Server.zones) ] else [])
-      @ (match server.Server.timeout_ms with None -> [] | Some t -> [ timeout_prefix ^ (string_of_int t) ])
-      @ [ order_prefix ^ (string_of_int server.Server.order) ]
-      @ acc
-    ) t.servers [] in
+      (fun server acc ->
+         [ nameserver_prefix ^ (Ipaddr.to_string server.Server.address.Address.ip) ^ "#" ^ (string_of_int server.Server.address.Address.port) ]
+         @ (if server.Server.zones <> Domain.Set.empty then [ zone_prefix ^ (String.concat " " @@ List.map Domain.to_string @@ Domain.Set.elements server.Server.zones) ] else [])
+         @ (match server.Server.timeout_ms with None -> [] | Some t -> [ timeout_prefix ^ (string_of_int t) ])
+         @ [ order_prefix ^ (string_of_int server.Server.order) ]
+         @ acc
+      ) t.servers [] in
   let search = List.map
-    (fun search ->
-      search_prefix ^ search
-    ) t.search in
+      (fun search ->
+         search_prefix ^ search
+      ) t.search in
   String.concat "\n" (nameservers @ search)
 
 module Unix = struct
@@ -187,24 +187,24 @@ module Unix = struct
         match map_line x with
         | None -> acc
         | Some x ->
-          begin
-            try
-              KeywordValue.of_string x :: acc
-            with
-            | _ -> acc
-          end
+            begin
+              try
+                KeywordValue.of_string x :: acc
+              with
+              | _ -> acc
+            end
       ) [] lines in
     let servers = List.fold_left (fun acc x -> match x with
       | KeywordValue.Nameserver(ip, Some port) ->
-        Server.Set.add { Server.address = { Address.ip; port }; zones = Domain.Set.empty; timeout_ms = None; order = 0 } acc
+          Server.Set.add { Server.address = { Address.ip; port }; zones = Domain.Set.empty; timeout_ms = None; order = 0 } acc
       | KeywordValue.Nameserver(ip, None) ->
-        Server.Set.add { Server.address = { Address.ip; port = 53 }; zones = Domain.Set.empty; timeout_ms = None; order = 0 } acc
+          Server.Set.add { Server.address = { Address.ip; port = 53 }; zones = Domain.Set.empty; timeout_ms = None; order = 0 } acc
       | _ -> acc
-    ) Server.Set.empty config in
+      ) Server.Set.empty config in
     let search = List.fold_left (fun acc x -> match x with
       | KeywordValue.Search names -> names @ acc
       | _ -> acc
-    ) [] config |> List.rev in
+      ) [] config |> List.rev in
     let assume_offline_after_drops = None in
     Result.Ok { servers; search; assume_offline_after_drops }
 end

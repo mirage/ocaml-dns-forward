@@ -42,11 +42,11 @@ let rpc t request =
   t.cb request
   >>= function
   | Result.Ok response ->
-    t.message_cb ~src:t.server_address ~dst:t.client_address ~buf:response ()
-    >>= fun () ->
-    Lwt.return (Result.Ok response)
+      t.message_cb ~src:t.server_address ~dst:t.client_address ~buf:response ()
+      >>= fun () ->
+      Lwt.return (Result.Ok response)
   | Result.Error e ->
-    Lwt.return (Result.Error e)
+      Lwt.return (Result.Error e)
 
 let nr_connects = Hashtbl.create 7
 

@@ -28,8 +28,8 @@ type t = {
 let make ?(max_id = 512) () =
   let free_ids =
     let rec loop acc = function
-      | 0 -> acc
-      | n -> loop (IntSet.add n acc) (n - 1) in
+    | 0 -> acc
+    | n -> loop (IntSet.add n acc) (n - 1) in
     loop IntSet.empty max_id in
   let used_ids = IntSet.empty in
   let free_ids_c = Lwt_condition.create () in
@@ -54,8 +54,8 @@ let rec with_id t f =
     Lwt.finalize
       (fun () -> f free_id)
       (fun () ->
-        t.used_ids <- IntSet.add free_id t.used_ids;
-        Lwt_condition.signal t.free_ids_c ();
-        Lwt.return_unit
+         t.used_ids <- IntSet.add free_id t.used_ids;
+         Lwt_condition.signal t.free_ids_c ();
+         Lwt.return_unit
       )
   end
