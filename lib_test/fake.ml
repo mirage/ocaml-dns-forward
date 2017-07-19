@@ -18,49 +18,37 @@
 (* A fake Time and Clock module for testing the timing without having to actually
    wait. *)
 
-let timeofday = ref 0.
+let timeofday = ref 0L
 let c = Lwt_condition.create ()
 
 let advance nsecs =
-  timeofday := !timeofday +. nsecs;
+  timeofday := Int64.add !timeofday nsecs;
   Lwt_condition.broadcast c ()
 
 let reset () =
-  timeofday := 0.;
+  timeofday := 0L;
   Lwt_condition.broadcast c ()
 
 module Time = struct
   type 'a io = 'a Lwt.t
 
-  let sleep n =
+  let sleep_ns n =
     let open Lwt.Infix in
     (* All sleeping is relative to the start of the program for now *)
-    let now = 0. in
+    let now = 0L in
     let rec loop () =
-      if !timeofday > (now +. n) then Lwt.return_unit else begin
-        Lwt_condition.wait c
-        >>= fun () ->
+      if !timeofday > Int64.add now n then Lwt.return_unit else (
+        Lwt_condition.wait c >>= fun () ->
         loop ()
-      end in
+      ) in
     loop ()
+
 end
 
-
 module Clock = struct
-
-  type tm =
-    { tm_sec: int;
-      tm_min: int;
-      tm_hour: int;
-      tm_mday: int;
-      tm_mon: int;
-      tm_year: int;
-      tm_wday: int;
-      tm_yday: int;
-      tm_isdst: bool;
-    }
-
-  let time () = !timeofday
-
-  let gmtime _ = failwith "gmtime unimplemented"
+  type 'a io = 'a Lwt.t
+  type t = unit
+  let elapsed_ns () = !timeofday
+  let disconnect () = Lwt.return ()
+  let period_ns () = None
 end

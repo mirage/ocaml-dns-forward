@@ -71,17 +71,21 @@ let or_fail_msg m = m >>= function
 
 module type S = Dns_forward_s.RESOLVER
 
-module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK) = struct
+module Make
+    (Client: Dns_forward_s.RPC_CLIENT)
+    (Time  : Mirage_time_lwt.S)
+    (Clock : Mirage_clock_lwt.MCLOCK) =
+struct
 
   module Cache = Dns_forward_cache.Make(Time)
-
+  type clock = Clock.t
   type address = Dns_forward_config.Address.t
   type message_cb = ?src:address -> ?dst:address -> buf:Cstruct.t -> unit -> unit Lwt.t
 
   type connection = {
     server: Dns_forward_config.Server.t;
     client: Client.t;
-    mutable reply_expected_since: float option;
+    mutable reply_expected_since: int64 option;
     (* if None: we don't expect a reply
        if Some t: we haven't heard from the server since time t *)
     mutable replies_missing: int;
@@ -91,13 +95,14 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
   }
 
   type t = {
+    clock: Clock.t;
     connections: connection list;
     local_names_cb: (Dns.Packet.question -> Dns.Packet.rr list option Lwt.t);
     cache: Cache.t;
     config: Dns_forward_config.t;
   }
 
-  let create ?(local_names_cb=fun _ -> Lwt.return_none) ?message_cb config =
+  let create ?(local_names_cb=fun _ -> Lwt.return_none) ?message_cb config clock =
     Lwt_list.map_s (fun server ->
         or_fail_msg @@ Client.connect ?message_cb server.Dns_forward_config.Server.address
         >>= fun client ->
@@ -106,9 +111,9 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
         let online = true in
         Lwt.return { server; client; reply_expected_since; replies_missing; online }
       ) (Dns_forward_config.Server.Set.elements config.Dns_forward_config.servers)
-    >>= fun connections ->
+    >|= fun connections ->
     let cache = Cache.make () in
-    Lwt.return { connections; local_names_cb; cache; config }
+    { clock; connections; local_names_cb; cache; config }
 
   let destroy t =
     Cache.destroy t.cache;
@@ -116,15 +121,10 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
 
   let answer buffer t =
     let len = Cstruct.len buffer in
-    let buf = Dns.Buf.of_cstruct buffer in
+    let buf = buffer in
     let open Dns.Packet in
-    match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
+    match Dns.Protocol.Server.parse (Cstruct.sub buf 0 len) with
     | Some ({ questions = [ question ]; _ } as request) ->
-
-        let marshal pkt =
-          let buf = Dns.Buf.create 1024 in
-          let buf = marshal buf pkt in
-          Cstruct.of_bigarray buf in
 
         (* Given a set of answers (resource records), synthesize an answer to the
            current question. *)
@@ -155,34 +155,42 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
                 | None ->
                     let c = List.find (fun c -> c.server = server) t.connections in
                     begin
-                      let now = Clock.time () in
+                      let now_ns = Clock.elapsed_ns t.clock in
                       (* If no timeout is configured, we will stop listening after
                          5s to avoid leaking threads if a server is offline *)
-                      let timeout_ms = match server.Server.timeout_ms with None -> 5000 | Some x -> x in
+                      let timeout_ns =
+                        match server.Server.timeout_ms with
+                        | None   -> Duration.of_sec 5
+                        | Some x -> Duration.of_ms x
+                      in
                       (* If no assume_offline_after_drops is configured then set this
                          to 5s. *)
-                      let assume_offline_after_drops = match t.config.assume_offline_after_drops with
-                      | Some c -> c
-                      | None -> 5 in
+                      let assume_offline_after_drops =
+                        match t.config.assume_offline_after_drops with
+                        | Some c -> c
+                        | None -> 5
+                      in
                       (* Within the overall timeout_ms (configured by the user) we will send
                          the request at 1s intervals to guard against packet drops. *)
-                      let delays_ms =
-                        let rec make from = if from > timeout_ms then [] else from :: (make (from + 1000)) in
-                        make 0 in
-                      let requests = List.map (fun delay_ms ->
-                          Time.sleep (float_of_int delay_ms /. 1000.0)
-                          >>= fun () ->
+                      let delays_ns =
+                        let rec make from =
+                          if from > timeout_ns then [] else
+                          from :: make (Int64.add from Duration.(of_sec 1))
+                        in
+                        make 0L in
+                      let requests = List.map (fun delay_ns ->
+                          Time.sleep_ns delay_ns >>= fun () ->
                           Client.rpc c.client buffer
-                        ) delays_ms in
+                        ) delays_ns in
                       let timeout =
-                        Time.sleep (float_of_int timeout_ms /. 1000.0)
-                        >>= fun () ->
-                        Lwt.return (Error (`Msg "timeout")) in
+                        Time.sleep_ns timeout_ns >|= fun () ->
+                        Error (`Msg "timeout")
+                      in
                       Lwt.pick (timeout :: requests)
                       >>= function
                       | Error x ->
-                          if c.reply_expected_since = None then c.reply_expected_since <- Some now;
-                          c.replies_missing <- c.replies_missing + (List.length delays_ms);
+                          if c.reply_expected_since = None then c.reply_expected_since <- Some now_ns;
+                          c.replies_missing <- c.replies_missing + (List.length delays_ns);
                           if assume_offline_after_drops < c.replies_missing && c.online then begin
                             Log.err (fun f -> f "Upstream DNS server %s has dropped %d packets in a row: assuming it's offline"
                                         (Dns_forward_config.Address.to_string address) c.replies_missing
@@ -202,8 +210,8 @@ module Make(Client: Dns_forward_s.RPC_CLIENT)(Time: V1_LWT.TIME)(Clock: V1.CLOCK
                           (* Determine whether it's a success or a failure; if a success
                              then insert the value into the cache. *)
                           let len = Cstruct.len reply in
-                          let buf = Dns.Buf.of_cstruct reply in
-                          begin match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
+                          let buf = reply in
+                          begin match Dns.Protocol.Server.parse (Cstruct.sub buf 0 len) with
                           | Some { detail = { rcode = NoError; _ }; answers = ((_ :: _) as answers); _ } ->
                               Cache.insert t.cache address question answers;
                               Lwt.return (Ok (`Success reply))

@@ -57,11 +57,11 @@ type t = {
   assume_offline_after_drops: int option;
 } [@@deriving sexp]
 
-val of_string: string -> (t, [ `Msg of string ]) Result.result
+val of_string: string -> (t, [ `Msg of string ]) result
 val to_string: t -> string
 
 val compare: t -> t -> int
 
 module Unix: sig
-  val of_resolv_conf: string -> (t, [ `Msg of string ]) Result.result
+  val of_resolv_conf: string -> (t, [ `Msg of string ]) result
 end

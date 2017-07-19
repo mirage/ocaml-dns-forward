@@ -24,8 +24,9 @@ type buffer = Cstruct.t
 type address = Ipaddr.t * int
 let string_of_address (ip, port) = Ipaddr.to_string ip ^ ":" ^ (string_of_int port)
 type error = [ `Msg of string ]
-let error_message = function
-| `Msg x -> x
+let pp_error ppf (`Msg x) = Fmt.string ppf x
+type write_error = Mirage_flow.write_error
+let pp_write_error = Mirage_flow.pp_write_error
 
 type 'a io = 'a Lwt.t
 
@@ -66,15 +67,15 @@ let read flow =
   wait ()
   >>= fun () ->
   if flow.r2l_closed
-  then Lwt.return `Eof
-  else Lwt.return (`Ok (Lwt_sequence.take_r flow.r2l))
+  then Lwt.return (Ok `Eof)
+  else Lwt.return (Ok (`Data (Lwt_sequence.take_r flow.r2l)))
 
 let write flow buf =
-  if flow.l2r_closed then Lwt.return `Eof else begin
+  if flow.l2r_closed then Lwt.return (Error `Closed) else (
     ignore @@ Lwt_sequence.add_l buf flow.l2r;
     Lwt_condition.signal flow.l2r_c ();
-    Lwt.return (`Ok ())
-  end
+    Lwt.return (Ok ())
+  )
 
 let shutdown_read flow =
   flow.r2l_closed <- true;
@@ -87,11 +88,11 @@ let shutdown_write flow =
   Lwt.return_unit
 
 let writev flow bufs =
-  if flow.l2r_closed then Lwt.return `Eof else begin
+  if flow.l2r_closed then Lwt.return (Error `Closed) else (
     List.iter (fun buf -> ignore @@ Lwt_sequence.add_l buf flow.l2r) bufs;
     Lwt_condition.signal flow.l2r_c ();
-    Lwt.return (`Ok ())
-  end
+    Lwt.return (Ok ())
+  )
 
 let nr_connects = Hashtbl.create 7
 

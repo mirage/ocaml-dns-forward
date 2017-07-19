@@ -37,8 +37,8 @@ module Make(Server: Rpc.Server.S) = struct
     Lwt_unix.sleep t.delay
     >>= fun () ->
     let len = Cstruct.len buffer in
-    let buf = Dns.Buf.of_cstruct buffer in
-    match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
+    let buf = buffer in
+    match Dns.Protocol.Server.parse (Cstruct.sub buf 0 len) with
     | Some request ->
         let open Dns.Packet in
         begin match request with
@@ -59,9 +59,8 @@ module Make(Server: Rpc.Server.S) = struct
                 | true -> [ bad_question ]
                 | false -> request.questions in
                 let pkt = { Dns.Packet.id; detail; questions; authorities=[]; additionals; answers } in
-                let buf = Dns.Buf.create 1024 in
-                let buf = marshal buf pkt in
-                Lwt.return (Result.Ok (Cstruct.of_bigarray buf))
+                let buf = Dns.Packet.marshal pkt in
+                Lwt.return (Ok buf)
             | Some v4 ->
                 let answers = [ { name = q_name; cls = RR_IN; flush = false; ttl = 0l; rdata = A v4 } ] in
                 let detail = { detail with Dns.Packet.qr = Dns.Packet.Response } in
@@ -69,15 +68,14 @@ module Make(Server: Rpc.Server.S) = struct
                 | true -> [ bad_question ]
                 | false -> request.questions in
                 let pkt = { Dns.Packet.id; detail; questions; authorities=[]; additionals; answers } in
-                let buf = Dns.Buf.create 1024 in
-                let buf = marshal buf pkt in
-                Lwt.return (Result.Ok (Cstruct.of_bigarray buf))
+                let buf = Dns.Packet.marshal pkt in
+                Lwt.return (Ok buf)
             end
         | _ ->
-            Lwt.return (Result.Error (`Msg "unexpected query type"))
+            Lwt.return (Error (`Msg "unexpected query type"))
         end
     | None ->
-        Lwt.return (Result.Error (`Msg "failed to parse request"))
+        Lwt.return (Error (`Msg "failed to parse request"))
 
   type server = Server.server
 
@@ -87,7 +85,7 @@ module Make(Server: Rpc.Server.S) = struct
     >>= fun server ->
     Server.listen server (fun buf -> answer buf t)
     >>= fun () ->
-    Lwt.return (Result.Ok server)
+    Lwt.return (Ok server)
 
   let shutdown = Server.shutdown
 

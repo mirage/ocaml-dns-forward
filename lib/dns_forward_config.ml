@@ -14,6 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
+
 open Sexplib.Std
 
 module Address = struct
@@ -41,13 +42,13 @@ module Domain = struct
   include M
   module Set = struct
     include Set.Make(M)
-    type _t = M.t list [@@deriving sexp]
-    let t_of_sexp (sexp: Sexplib.Type.t) : t =
+   type _t = M.t list [@@deriving sexp]
+      let t_of_sexp (sexp: Sexplib.Type.t) : t =
       let _t = _t_of_sexp sexp in
       List.fold_left (fun set elt -> add elt set) empty _t
-    let sexp_of_t (t: t) : Sexplib.Type.t =
-      let _t = fold (fun elt acc -> elt :: acc) t [] in
-      sexp_of__t _t
+      let sexp_of_t (t: t) : Sexplib.Type.t =
+        let _t = fold (fun elt acc -> elt :: acc) t [] in
+        sexp_of__t _t
   end
   module Map = Map.Make(M)
   let to_string = String.concat "."
@@ -161,8 +162,8 @@ let of_string txt =
         | _, _, _, `Offline n ->
             zones, timeout, order, { acc with assume_offline_after_drops = Some n }
       ) ([], None, 0, { servers = Server.Set.empty; search = []; assume_offline_after_drops = None })
-    |> (fun (_, _, _, x) -> Result.Ok x)
-  with e -> Result.Error (`Msg (Printf.sprintf "Failed to parse configuration: %s" (Printexc.to_string e)))
+    |> (fun (_, _, _, x) -> Ok x)
+  with e -> Error (`Msg (Printf.sprintf "Failed to parse configuration: %s" (Printexc.to_string e)))
 
 let to_string t =
   let nameservers = Server.Set.fold
@@ -206,5 +207,5 @@ module Unix = struct
       | _ -> acc
       ) [] config |> List.rev in
     let assume_offline_after_drops = None in
-    Result.Ok { servers; search; assume_offline_after_drops }
+    Ok { servers; search; assume_offline_after_drops }
 end

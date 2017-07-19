@@ -8,26 +8,28 @@ dev-repo:     "https://github.com/djs55/ocaml-dns-forward"
 doc:          "https://github.com/djs55/ocaml-dns-forward"
 
 build: [
-  make
+  ["jbuilder" "subst"] {pinned}
+  ["jbuilder" "build" "-p" name "-j" jobs]
 ]
-build-test: [
-  make "test"
-]
+build-test: ["jbuilder" "runtest" "-p" name]
 
 depends: [
-  "ocamlfind"  {build}
-  "jbuilder"   {build}
-  "mirage-flow" {<= "1.1.0"}
-  "channel"
+  "jbuilder"        {build & >= "1.0+beta10"}
+  "cstruct"         {>= "3.0.0"}
+  "logs"            {>= "0.5.0"}
+  "lwt"             {>= "2.7.0"}
+  "mirage-flow-lwt" {>= "1.2.0"}
+  "mirage-clock-lwt"
+  "mirage-channel-lwt"
+  "mirage-time-lwt"
+  "duration"
   "dns"
-  "rresult" "astring" "fmt"
-  "cstruct"     {>= "2.2"}
+  "rresult"
+  "astring"
+  "fmt"
   "result"
-  "lwt"         {>= "2.6.0"}
-  "logs"        {>= "0.5.0"}
   "mtime"
   "sexplib"
   "ipaddr"
-  "alcotest"   {test}
 ]
 available: [ocaml-version >= "4.03.0"]

@@ -33,4 +33,4 @@ module Server: sig
   (** A forwarding DNS proxy over TCP *)
 end
 
-module Clock: V1.CLOCK
+module Clock: Mirage_clock_lwt.MCLOCK
