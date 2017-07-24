@@ -37,7 +37,7 @@ type answer = {
   timeout: unit Lwt.t;
 }
 
-module Make(Time: V1_LWT.TIME) = struct
+module Make(Time: Mirage_time_lwt.S) = struct
   type t = {
     max_bindings: int;
     (* For every question we store a mapping of server address to the answer *)
@@ -64,7 +64,9 @@ module Make(Time: V1_LWT.TIME) = struct
     end
 
   let destroy t =
-    Question.Map.iter (fun _ all -> Address.Map.iter (fun _ answer -> Lwt.cancel answer.timeout) all) t.cache;
+    Question.Map.iter (fun _ all ->
+        Address.Map.iter (fun _ answer ->
+            Lwt.cancel answer.timeout) all) t.cache;
     t.cache <- Question.Map.empty
 
   let insert t address question rrs =
@@ -81,10 +83,13 @@ module Make(Time: V1_LWT.TIME) = struct
     (* Each resource record could be expired separately using a different TTL
        but we'll simplify the code by expiring all resource records received
        from the same server address when the lowest TTL is exceeded. *)
-    let min_ttl = List.fold_left (min) Int32.max_int (List.map (fun rr -> rr.Dns.Packet.ttl) rrs) in
+    let min_ttl =
+      List.fold_left min Int32.max_int
+        (List.map (fun rr -> rr.Dns.Packet.ttl) rrs)
+    in
     let timeout =
       let open Lwt.Infix in
-      Time.sleep (Int32.to_float min_ttl)
+      Time.sleep_ns (Duration.of_sec @@ Int32.to_int min_ttl)
       >>= fun () ->
       if Question.Map.mem question t.cache then begin
         let address_to_answer =
@@ -94,11 +99,14 @@ module Make(Time: V1_LWT.TIME) = struct
         then t.cache <- Question.Map.remove question t.cache
         else t.cache <- Question.Map.add question address_to_answer t.cache
       end;
-      Lwt.return_unit in
+      Lwt.return_unit
+    in
     let answer = { rrs; timeout } in
     let address_to_answer =
       if Question.Map.mem question t.cache
       then Question.Map.find question t.cache
-      else Address.Map.empty in
-    t.cache <- Question.Map.add question (Address.Map.add address answer address_to_answer) t.cache
+      else Address.Map.empty
+    in
+    t.cache <- Question.Map.add question
+        (Address.Map.add address answer address_to_answer) t.cache
 end

@@ -18,20 +18,18 @@ let make_a_query name =
   let authorities = [] in
   let additionals = [] in
   let pkt = { id; detail; questions; answers; authorities; additionals } in
-  let buf = Dns.Buf.create 1024 in
-  let buf = marshal buf pkt in
-  Cstruct.of_bigarray buf
+  marshal pkt
 
 let parse_response response =
-  let pkt = Dns.Packet.parse (Cstruct.to_bigarray response) in
+  let pkt = Dns.Packet.parse response in
   match pkt.Dns.Packet.detail with
   | { Dns.Packet.qr = Dns.Packet.Query; _ } ->
-      Lwt.return (Result.Error (`Msg "parsed a response which was actually a query in disguise"))
+      Lwt.return (Error (`Msg "parsed a response which was actually a query in disguise"))
   | { Dns.Packet.qr = Dns.Packet.Response; _ } ->
       begin match pkt.Dns.Packet.answers with
       | [ { Dns.Packet.rdata = Dns.Packet.A ipv4; _ } ] ->
-          Lwt.return (Result.Ok ipv4)
-      | xs -> Lwt.return (Result.Error (`Msg (Printf.sprintf "failed to find answers: [ %s ]" (String.concat "; " (List.map Dns.Packet.rr_to_string xs)))))
+          Lwt.return (Ok ipv4)
+      | xs -> Lwt.return (Error (`Msg (Printf.sprintf "failed to find answers: [ %s ]" (String.concat "; " (List.map Dns.Packet.rr_to_string xs)))))
       end
 
 let test_server () =
@@ -65,15 +63,15 @@ let test_server () =
       Rpc.disconnect c
       >>= fun () ->
       if not (!expected_dst) then failwith ("Expected destination address never seen in message_cb");
-      Lwt.return (Result.Ok ())
+      Lwt.return (Ok ())
     end with
-  | Result.Ok () ->
+  | Ok () ->
       Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
-  | Result.Error (`Msg m) -> failwith m
+  | Error (`Msg m) -> failwith m
 
-module Time = struct
+module NormalTime = struct
   type 'a io = 'a Lwt.t
-  let sleep = Lwt_unix.sleep
+  let sleep_ns ns = Lwt_unix.sleep (Duration.to_f ns)
 end
 
 let test_local_lookups () =
@@ -88,7 +86,7 @@ let test_local_lookups () =
       let open Error in
       S.serve ~address:public_address public_server
       >>= fun _ ->
-      let module R = Dns_forward.Resolver.Make(Rpc)(Time)(Clock) in
+      let module R = Dns_forward.Resolver.Make(Rpc)(NormalTime)(Mclock) in
       let open Dns_forward.Config in
       let servers = Server.Set.of_list [
           { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
@@ -103,7 +101,9 @@ let test_local_lookups () =
             let name = q_name and cls = RR_IN and flush = false and ttl = 100l in
             Lwt.return (Some [ { name; cls; flush; ttl; rdata } ])
         | _ ->
-            Lwt.return None in
+            Lwt.return None
+      in
+      Mclock.connect () >>=
       R.create ~local_names_cb config
       >>= fun r ->
       let module F = Dns_forward.Server.Make(Rpc)(R) in
@@ -126,17 +126,17 @@ let test_local_lookups () =
       >>= fun () ->
       F.destroy f
       >>= fun () ->
-      Lwt.return (Result.Ok ())
+      Lwt.return (Ok ())
     end with
-  | Result.Ok () ->
+  | Ok () ->
       Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
-  | Result.Error (`Msg m) -> failwith m
+  | Error (`Msg m) -> failwith m
 
 let test_tcp_multiplexing () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   match Lwt_main.run begin
-      let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
-      let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
+      let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+      let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
       let module S = Server.Make(Proto_server) in
       let foo_public = "8.8.8.8" in
       (* a public server mapping 'foo' to a public ip *)
@@ -145,13 +145,14 @@ let test_tcp_multiplexing () =
       let open Error in
       S.serve ~address:public_address public_server
       >>= fun _ ->
-      let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
+      let module R = Dns_forward.Resolver.Make(Proto_client)(NormalTime)(Mclock) in
       let open Dns_forward.Config in
       let servers = Server.Set.of_list [
           { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
         ] in
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
+      Mclock.connect () >>=
       R.create config
       >>= fun r ->
       let module F = Dns_forward.Server.Make(Proto_server)(R) in
@@ -178,21 +179,21 @@ let test_tcp_multiplexing () =
         Proto_client.rpc c request
         >>= fun response ->
         (* Check the response has the correct transaction id *)
-        let request' = Dns.Packet.parse (Cstruct.to_bigarray request)
-        and response' = Dns.Packet.parse (Cstruct.to_bigarray response) in
+        let request' = Dns.Packet.parse request
+        and response' = Dns.Packet.parse response in
         Alcotest.(check int) "DNS.id" request'.Dns.Packet.id response'.Dns.Packet.id;
         parse_response response
         >>= fun ipv4 ->
         Alcotest.(check string) "IPv4" foo_public (Ipaddr.V4.to_string ipv4);
-        Lwt.return (Result.Ok ()) in
+        Lwt.return (Ok ()) in
       let rec seq f = function
-      | 0 -> Lwt.return (Result.Ok ())
+      | 0 -> Lwt.return (Ok ())
       | n ->
           f ()
           >>= fun () ->
           seq f (n - 1) in
       let rec par f = function
-      | 0 -> Lwt.return (Result.Ok ())
+      | 0 -> Lwt.return (Ok ())
       | n ->
           let first = f () in
           let rest = par f (n - 1) in
@@ -208,18 +209,18 @@ let test_tcp_multiplexing () =
       F.destroy f
       >>= fun () ->
       if not (!expected_dst) then failwith ("Expected destination address never seen in message_cb");
-      Lwt.return (Result.Ok ())
+      Lwt.return (Ok ())
     end with
-  | Result.Ok () ->
+  | Ok () ->
       Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
-  | Result.Error (`Msg m) -> failwith m
+  | Error (`Msg m) -> failwith m
 
 (* One good one bad server should behave like the good server *)
 let test_good_bad_server () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   match Lwt_main.run begin
-      let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
-      let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
+      let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+      let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
       let module S = Server.Make(Proto_server) in
       let foo_public = "8.8.8.8" in
       (* a public server mapping 'foo' to a public ip *)
@@ -232,7 +233,7 @@ let test_good_bad_server () =
       let bad_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 999 } in
       S.serve ~address:bad_address bad_server
       >>= fun _ ->
-      let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
+      let module R = Dns_forward.Resolver.Make(Proto_client)(NormalTime)(Mclock) in
       let open Dns_forward.Config in
       (* Forward to a good server and a bad server, both with timeouts. The request to
          the bad request should fail fast but the good server should be given up to
@@ -243,21 +244,22 @@ let test_good_bad_server () =
         ] in
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
+      Mclock.connect () >>=
       R.create config
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       let request =
         R.answer request r
         >>= function
-        | Result.Ok reply ->
+        | Ok reply ->
             let len = Cstruct.len reply in
-            let buf = Dns.Buf.of_cstruct reply in
-            begin match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
+            let buf = reply in
+            begin match Dns.Protocol.Server.parse (Cstruct.sub buf 0 len) with
             | Some { Dns.Packet.answers = _ :: _ ; _ } -> Lwt.return_true
             | Some packet -> failwith ("test_good_bad_server bad response: " ^ (Dns.Packet.to_string packet))
             | None -> failwith "test_good_bad_server: failed to parse response"
             end
-        | Result.Error _ -> failwith "test_good_bad_server timeout: did the failure overtake the success?" in
+        | Error _ -> failwith "test_good_bad_server timeout: did the failure overtake the success?" in
       let timeout =
         Lwt_unix.sleep 5.
         >>= fun () ->
@@ -267,11 +269,11 @@ let test_good_bad_server () =
       if not ok then failwith "test_good_bad_server hit timeout";
       R.destroy r
       >>= fun () ->
-      Lwt.return (Result.Ok ())
+      Lwt.return (Ok ())
     end with
-  | Result.Ok () ->
+  | Ok () ->
       Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
-  | Result.Error (`Msg m) -> failwith m
+  | Error (`Msg m) -> failwith m
 
 (* One good one dead server should behave like the good server *)
 let test_good_dead_server () =
@@ -306,17 +308,17 @@ let test_good_dead_server () =
         ] in
       let config = { servers; search = []; assume_offline_after_drops = Some 1 } in
       let open Lwt.Infix in
-      R.create config
+      R.create config ()
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       let t = R.answer request r in
       (* First request will trigger the internal timeout and mark the bad server
          as offline. The sleep timeout here will only trigger if this fails. *)
-      Fake.advance 1.;
+      Fake.advance Duration.(of_sec 1);
       (* HACK: we want to let all threads run until they block but we don't have
          an API for that. This assumes that all computation will finish in 0.1s *)
       Lwt_unix.sleep 0.1 >>= fun () ->
-      Fake.advance 1.;
+      Fake.advance Duration.(of_sec 1);
       Lwt_unix.sleep 0.1 >>= fun () ->
       Lwt.pick [
         (Lwt_unix.sleep 1. >>= fun () -> Lwt.fail_with "test_good_dead_server: initial request had no response");
@@ -325,19 +327,19 @@ let test_good_dead_server () =
       >>= fun () ->
       (* The bad server should be marked offline and no-one will wait for it *)
       Fake.reset ();
-      Fake.advance 0.5; (* avoid the timeouts winning the race with the actual result *)
+      Fake.advance Duration.(of_ms 500); (* avoid the timeouts winning the race with the actual result *)
       let request =
         R.answer request r
         >>= function
-        | Result.Ok reply ->
+        | Ok reply ->
             let len = Cstruct.len reply in
-            let buf = Dns.Buf.of_cstruct reply in
-            begin match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 len) with
+            let buf = reply in
+            begin match Dns.Protocol.Server.parse (Cstruct.sub buf 0 len) with
             | Some { Dns.Packet.answers = _ :: _ ; _ } -> Lwt.return_true
             | Some packet -> failwith ("test_good_dead_server bad response: " ^ (Dns.Packet.to_string packet))
             | None -> failwith "test_good_dead_server: failed to parse response"
             end
-        | Result.Error _ -> failwith "test_good_dead_server timeout: did the failure overtake the success?" in
+        | Error _ -> failwith "test_good_dead_server timeout: did the failure overtake the success?" in
       let timeout =
         Lwt_unix.sleep 5.
         >>= fun () ->
@@ -347,18 +349,18 @@ let test_good_dead_server () =
       if not ok then failwith "test_good_dead_server hit timeout";
       R.destroy r
       >>= fun () ->
-      Lwt.return (Result.Ok ())
+      Lwt.return (Ok ())
     end with
-  | Result.Ok () ->
+  | Ok () ->
       Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
-  | Result.Error (`Msg m) -> failwith m
+  | Error (`Msg m) -> failwith m
 
 (* One bad server should be ignored *)
 let test_bad_server () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   match Lwt_main.run begin
-      let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
-      let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
+      let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+      let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
       let module S = Server.Make(Proto_server) in
       let foo_public = "8.8.8.8" in
       (* a public server mapping 'foo' to a public ip *)
@@ -367,7 +369,7 @@ let test_bad_server () =
       let open Error in
       S.serve ~address:public_address public_server
       >>= fun _ ->
-      let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
+      let module R = Dns_forward.Resolver.Make(Proto_client)(NormalTime)(Mclock) in
       let open Dns_forward.Config in
       let bad_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 999 } in
       (* Forward to a good server and a bad server, both with timeouts. The request to
@@ -379,14 +381,15 @@ let test_bad_server () =
         ] in
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
+      Mclock.connect () >>=
       R.create config
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       let request =
         R.answer request r
         >>= function
-        | Result.Ok _ -> Lwt.return_false
-        | Result.Error _ -> failwith "test_bad_server rpc error" in
+        | Ok _ -> Lwt.return_false
+        | Error _ -> failwith "test_bad_server rpc error" in
       let timeout =
         Lwt_unix.sleep 0.5
         >>= fun () ->
@@ -396,16 +399,16 @@ let test_bad_server () =
       if not timeout then failwith "test_bad_server did not hit timeout";
       R.destroy r
       >>= fun () ->
-      Lwt.return (Result.Ok ())
+      Lwt.return (Ok ())
     end with
-  | Result.Ok () ->
+  | Ok () ->
       Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
-  | Result.Error (`Msg m) -> failwith m
+  | Error (`Msg m) -> failwith m
 
 let test_timeout () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
-  let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
-  let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
+  let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+  let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
   let module S = Server.Make(Proto_server) in
   let foo_public = "8.8.8.8" in
   (* a public server mapping 'foo' to a public ip *)
@@ -417,21 +420,22 @@ let test_timeout () =
       S.serve ~address:bar_address bar_server
       >>= fun _ ->
       (* a resolver which uses both servers *)
-      let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
+      let module R = Dns_forward.Resolver.Make(Proto_client)(NormalTime)(Mclock) in
       let open Dns_forward.Config in
       let servers = Server.Set.of_list [
           { Server.address = bar_address; zones = Domain.Set.empty; timeout_ms = Some 0; order = 0 }
         ] in
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
+      Mclock.connect () >>=
       R.create config
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       let request =
         R.answer request r
         >>= function
-        | Result.Error _ -> Lwt.return true
-        | Result.Ok _ -> failwith "got a result when timeout expected" in
+        | Error _ -> Lwt.return true
+        | Ok _ -> failwith "got a result when timeout expected" in
       let timeout =
         Lwt_unix.sleep 5.
         >>= fun () ->
@@ -441,18 +445,18 @@ let test_timeout () =
       if not ok then failwith "server timeout was not respected";
       R.destroy r
       >>= fun () ->
-      Lwt.return (Result.Ok ())
+      Lwt.return (Ok ())
     end with
-  | Result.Ok () ->
+  | Ok () ->
       (* the disconnects and close should have removed all the connections: *)
       Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
       Alcotest.(check int) "bar_server queries" 1 (S.get_nr_queries bar_server);
-  | Result.Error (`Msg m) -> failwith m
+  | Error (`Msg m) -> failwith m
 
 let test_cache () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
-  let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
-  let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
+  let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+  let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
   let module S = Server.Make(Proto_server) in
   let foo_public = "8.8.8.8" in
   (* a public server mapping 'foo' to a public ip *)
@@ -464,43 +468,44 @@ let test_cache () =
       S.serve ~address:bar_address bar_server
       >>= fun server ->
       (* a resolver which uses both servers *)
-      let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
+      let module R = Dns_forward.Resolver.Make(Proto_client)(NormalTime)(Mclock) in
       let open Dns_forward.Config in
       let servers = Server.Set.of_list [
           { Server.address = bar_address; zones = Domain.Set.empty; timeout_ms = Some 1000; order = 0 }
         ] in
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
+      Mclock.connect () >>=
       R.create config
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       R.answer request r
       >>= function
-      | Result.Error _ -> failwith "failed initial lookup"
-      | Result.Ok _ ->
+      | Error _ -> failwith "failed initial lookup"
+      | Ok _ ->
           S.shutdown server
           >>= fun () ->
           R.answer request r
           >>= function
-          | Result.Error (`Msg m) -> failwith ("failed cached lookup: " ^ m)
-          | Result.Ok _ ->
+          | Error (`Msg m) -> failwith ("failed cached lookup: " ^ m)
+          | Ok _ ->
               R.destroy r
               >>= fun () ->
-              Lwt.return (Result.Ok ())
+              Lwt.return (Ok ())
     end with
-  | Result.Ok () ->
+  | Ok () ->
       (* the disconnects and close should have removed all the connections: *)
       Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
       Alcotest.(check int) "bar_server queries" 1 (S.get_nr_queries bar_server);
-  | Result.Error (`Msg m) -> failwith m
+  | Error (`Msg m) -> failwith m
 
 (* One slow private server, one fast public server with different bindings for
    the same name. The order field guarantees that we take the answer from the
    slow private server. *)
 let test_order () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
-  let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
-  let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Time) in
+  let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+  let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
   let module S = Server.Make(Proto_server) in
   let foo_public = "8.8.8.8" in
   let foo_private = "192.168.1.1" in
@@ -519,7 +524,7 @@ let test_order () =
       >>= fun _ ->
 
       (* a resolver which uses both servers *)
-      let module R = Dns_forward.Resolver.Make(Proto_client)(Time)(Clock) in
+      let module R = Dns_forward.Resolver.Make(Proto_client)(NormalTime)(Mclock) in
       let open Dns_forward.Config in
       let servers = Server.Set.of_list [
           { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = None; order = 1 };
@@ -527,6 +532,7 @@ let test_order () =
         ] in
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
+      Mclock.connect () >>=
       R.create config
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
@@ -539,15 +545,15 @@ let test_order () =
       let open Lwt.Infix in
       R.destroy r
       >>= fun () ->
-      Lwt.return (Result.Ok ())
+      Lwt.return (Ok ())
     end with
-  | Result.Ok () ->
+  | Ok () ->
       (* the disconnects and close should have removed all the connections: *)
       Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
       (* We now query all servers matching a zone *)
       Alcotest.(check int) "private_server queries" 1 (S.get_nr_queries private_server);
       Alcotest.(check int) "public_server queries" 1 (S.get_nr_queries public_server);
-  | Result.Error (`Msg m) -> failwith m
+  | Error (`Msg m) -> failwith m
 
 let test_forwarder_zone () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
@@ -569,7 +575,7 @@ let test_forwarder_zone () =
       S.serve ~address:bar_address bar_server
       >>= fun _ ->
       (* a resolver which uses both servers *)
-      let module R = Dns_forward.Resolver.Make(Rpc)(Time)(Clock) in
+      let module R = Dns_forward.Resolver.Make(Rpc)(NormalTime)(Mclock) in
       let open Dns_forward.Config in
       let servers = Server.Set.of_list [
           { Server.address = foo_address; zones = Domain.Set.add [ "foo" ] Domain.Set.empty; timeout_ms = None; order = 0 };
@@ -577,6 +583,7 @@ let test_forwarder_zone () =
         ] in
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
+      Mclock.connect () >>=
       R.create config
       >>= fun r ->
       let module F = Dns_forward.Server.Make(Rpc)(R) in
@@ -599,15 +606,15 @@ let test_forwarder_zone () =
       >>= fun () ->
       F.destroy f
       >>= fun () ->
-      Lwt.return (Result.Ok ())
+      Lwt.return (Ok ())
     end with
-  | Result.Ok () ->
+  | Ok () ->
       (* the disconnects and close should have removed all the connections: *)
       Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
       (* The server should have sent the query only to foo and not to bar *)
       Alcotest.(check int) "foo_server queries" 1 (S.get_nr_queries foo_server);
       Alcotest.(check int) "bar_server queries" 0 (S.get_nr_queries bar_server);
-  | Result.Error (`Msg m) -> failwith m
+  | Error (`Msg m) -> failwith m
 
 
 let test_infra_set = [
@@ -666,8 +673,8 @@ let config_examples = [
 
 let test_parse_config txt expected () =
   match of_string txt with
-  | Result.Error (`Msg m) -> failwith m
-  | Result.Ok x ->
+  | Error (`Msg m) -> failwith m
+  | Ok x ->
       if compare expected x <> 0
       then failwith ("failed to parse " ^ txt)
 

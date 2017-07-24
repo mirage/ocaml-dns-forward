@@ -29,7 +29,7 @@ module Client = struct
   module Make
       (Sockets: Dns_forward_s.FLOW_CLIENT with type address = Ipaddr.t * int)
       (Packet: Dns_forward_s.READERWRITER with type flow = Sockets.flow)
-      (Time: V1_LWT.TIME) = struct
+      (Time: Mirage_time_lwt.S) = struct
     type address = Dns_forward_config.Address.t
     type request = Cstruct.t
     type response = Cstruct.t
@@ -41,7 +41,7 @@ module Client = struct
       mutable client_address: address;
       mutable rw: Packet.t option;
       mutable disconnect_on_idle: unit Lwt.t;
-      wakeners: (int, Dns.Packet.question * ((Cstruct.t, [ `Msg of string ]) Result.result Lwt.u)) Hashtbl.t;
+      wakeners: (int, Dns.Packet.question * ((Cstruct.t, [ `Msg of string ]) result Lwt.u)) Hashtbl.t;
       m: Lwt_mutex.t;
       free_ids: Dns_forward_free_id.t;
       message_cb: message_cb;
@@ -57,7 +57,7 @@ module Client = struct
            match t with
            | { rw = Some rw; _ } as t ->
                t.rw <- None;
-               let error = Result.Error (`Msg (to_string t ^ ": connection to server was closed")) in
+               let error = Error (`Msg (to_string t ^ ": connection to server was closed")) in
                Hashtbl.iter (fun id (question, u) ->
                    Log.info (fun f -> f "%s %04x: disconnect: failing request for question %s"
                                 (to_string t) id
@@ -80,12 +80,12 @@ module Client = struct
       let rec loop () =
         Packet.read rw
         >>= function
-        | Result.Error (`Msg m) ->
+        | Error (`Msg m) ->
             Log.debug (fun f -> f "%s: dispatcher shutting down: %s" (to_string t) m);
             disconnect t
-        | Result.Ok buffer ->
-            let buf = Dns.Buf.of_cstruct buffer in
-            begin match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 (Cstruct.len buffer)) with
+        | Ok buffer ->
+            let buf = buffer in
+            begin match Dns.Protocol.Server.parse (Cstruct.sub buf 0 (Cstruct.len buffer)) with
             | Some ({ Dns.Packet.questions = [ question ]; _ } as response) ->
                 let client_id = response.Dns.Packet.id in
                 if Hashtbl.mem t.wakeners client_id then begin
@@ -98,7 +98,7 @@ module Client = struct
                              )
                   end else begin
                     (* It's possible that disconnect has already failed the thread *)
-                    try Lwt.wakeup_later u (Result.Ok buffer)
+                    try Lwt.wakeup_later u (Ok buffer)
                     with Invalid_argument _ ->
                       Log.warn (fun f -> f "%s %04x: response arrived for DNS request just after disconnection" (to_string t) client_id)
                   end
@@ -133,7 +133,7 @@ module Client = struct
               Lwt_result.return rw)
       >>= fun rw ->
       (* Add a fresh idle timer *)
-      t.disconnect_on_idle <- (let open Lwt.Infix in Time.sleep 30. >>= fun () -> disconnect t);
+      t.disconnect_on_idle <- (let open Lwt.Infix in Time.sleep_ns Duration.(of_sec 30) >>= fun () -> disconnect t);
       Lwt_result.return rw
 
     let connect ?(message_cb = fun ?src:_ ?dst:_ ~buf:_ () -> Lwt.return_unit) address =
@@ -146,8 +146,8 @@ module Client = struct
       Lwt_result.return { client_address; address; rw; disconnect_on_idle; wakeners; m; free_ids; message_cb }
 
     let rpc (t: t) buffer =
-      let buf = Dns.Buf.of_cstruct buffer in
-      match Dns.Protocol.Server.parse (Dns.Buf.sub buf 0 (Cstruct.len buffer)) with
+      let buf = buffer in
+      match Dns.Protocol.Server.parse (Cstruct.sub buf 0 (Cstruct.len buffer)) with
       | Some ({ Dns.Packet.questions = [ question ]; _ } as request) ->
           (* Note: the received request id is scoped to the connection with the
              client. Since we are multiplexing requests to a single server we need
@@ -187,9 +187,9 @@ module Client = struct
                          therefore if we fail to write the request, reconnect and try once more. *)
                       Packet.write rw buffer
                       >>= function
-                      | Result.Ok () ->
+                      | Ok () ->
                           Lwt_result.return ()
-                      | Result.Error (`Msg m) ->
+                      | Error (`Msg m) ->
                           Log.info (fun f -> f "%s: caught %s writing request, attempting to reconnect" (to_string t) m);
                           disconnect t
                           >>= fun () ->
@@ -202,9 +202,9 @@ module Client = struct
                           Packet.write rw buffer
                     end
                     >>= function
-                    | Result.Error (`Msg m) ->
+                    | Error (`Msg m) ->
                         Lwt_result.fail (`Msg m)
-                    | Result.Ok () ->
+                    | Ok () ->
                         let open Lwt_result.Infix in
                         th (* will be woken up by the dispatcher *)
                         >>= fun buf ->
@@ -232,8 +232,10 @@ module Server = struct
 
   module Make
       (Sockets: Dns_forward_s.FLOW_SERVER with type address = Ipaddr.t * int)
-      (Packet: Dns_forward_s.READERWRITER with type flow = Sockets.flow)
-      (Time: V1_LWT.TIME) = struct
+      (Packet : Dns_forward_s.READERWRITER with type flow = Sockets.flow)
+      (Time   : Mirage_time_lwt.S) =
+  struct
+
     type address = Dns_forward_config.Address.t
     type request = Cstruct.t
     type response = Cstruct.t
@@ -262,9 +264,9 @@ module Server = struct
                  let open Lwt.Infix in
                  cb request
                  >>= function
-                 | Result.Error _ ->
+                 | Error _ ->
                      Lwt.return_unit
-                 | Result.Ok response ->
+                 | Ok response ->
                      Packet.write rw response
                      >>= fun _ ->
                      Lwt.return_unit
@@ -272,10 +274,10 @@ module Server = struct
             loop () in
           loop ()
           >>= function
-          | Result.Error (`Msg m) ->
+          | Error (`Msg m) ->
               Log.err (fun f -> f "server loop failed with: %s" m);
               Lwt.return_unit
-          | Result.Ok () ->
+          | Ok () ->
               Lwt.return_unit
         );
       Lwt_result.return ()

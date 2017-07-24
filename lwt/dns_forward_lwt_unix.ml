@@ -33,14 +33,11 @@ let string_of_sockaddr = function
 module Common = struct
   (** Both UDP and TCP *)
 
-  type error = [
-    | `Msg of string
-  ]
-
-  let error_message = function
-  | `Msg x -> x
-
-  let errorf fmt = Printf.ksprintf (fun s -> Lwt.return (Result.Error (`Msg s))) fmt
+  type error = [ `Msg of string ]
+  type write_error = Mirage_flow.write_error
+  let pp_error ppf (`Msg x) = Fmt.string ppf x
+  let pp_write_error = Mirage_flow.pp_write_error
+  let errorf fmt = Printf.ksprintf (fun s -> Lwt.return (Error (`Msg s))) fmt
 
   type address = Ipaddr.t * int
 
@@ -96,7 +93,7 @@ module Tcp = struct
       (fun () ->
          Lwt_unix.connect fd sockaddr
          >>= fun () ->
-         Lwt.return (Result.Ok (of_fd ~read_buffer_size address fd))
+         Lwt.return (Ok (of_fd ~read_buffer_size address fd))
       )
       (fun e ->
          Lwt_unix.close fd
@@ -105,58 +102,58 @@ module Tcp = struct
       )
 
   let read t = match t.fd with
-  | None -> Lwt.return `Eof
+  | None -> Lwt.return (Ok `Eof)
   | Some fd ->
       if Cstruct.len t.read_buffer = 0 then t.read_buffer <- Cstruct.create t.read_buffer_size;
       Lwt.catch
         (fun () ->
            Lwt_bytes.read fd t.read_buffer.Cstruct.buffer t.read_buffer.Cstruct.off t.read_buffer.Cstruct.len
            >>= function
-           | 0 -> Lwt.return `Eof
+           | 0 -> Lwt.return (Ok `Eof)
            | n ->
                let results = Cstruct.sub t.read_buffer 0 n in
                t.read_buffer <- Cstruct.shift t.read_buffer n;
-               Lwt.return (`Ok results)
+               Lwt.return (Ok (`Data results))
         ) (fun e ->
             Log.err (fun f -> f "%s: read caught %s returning Eof"
                         (string_of_flow t)
                         (Printexc.to_string e)
                     );
-            Lwt.return `Eof
+            Lwt.return (Ok `Eof)
           )
 
   let write t buf = match t.fd with
-  | None -> Lwt.return `Eof
+  | None -> Lwt.return (Error `Closed)
   | Some fd ->
       Lwt.catch
         (fun () ->
            Lwt_cstruct.(complete (write fd) buf)
            >>= fun () ->
-           Lwt.return (`Ok ())
+           Lwt.return (Ok ())
         ) (function
-          | Unix.Unix_error(Unix.ECONNRESET, _, _) -> Lwt.return `Eof
+          | Unix.Unix_error(Unix.ECONNRESET, _, _) -> Lwt.return (Error `Closed)
           | e ->
               Log.err (fun f -> f "%s: write caught %s returning Eof"
                           (string_of_flow t)
                           (Printexc.to_string e)
                       );
-              Lwt.return `Eof
+              Lwt.return (Error `Closed)
           )
 
   let writev t bufs = match t.fd with
-  | None -> Lwt.return `Eof
+  | None -> Lwt.return (Error `Closed)
   | Some fd ->
       Lwt.catch
         (fun () ->
            let rec loop = function
-           | [] -> Lwt.return (`Ok ())
+           | [] -> Lwt.return (Ok ())
            | buf :: bufs ->
                Lwt_cstruct.(complete (write fd) buf)
                >>= fun () ->
                loop bufs in
            loop bufs
         ) (fun _e ->
-            Lwt.return `Eof
+            Lwt.return (Error `Closed)
           )
 
   let close t = match t.fd with
@@ -214,8 +211,10 @@ module Tcp = struct
     Lwt.catch
       (fun () ->
          Lwt_unix.setsockopt fd Lwt_unix.SO_REUSEADDR true;
-         Lwt_unix.bind fd (sockaddr_of_address address);
-         Lwt.return (Result.Ok { server_fd = Some fd; read_buffer_size = default_read_buffer_size; address })
+         Lwt_unix.bind fd (sockaddr_of_address address) >|= fun () ->
+         Ok { server_fd = Some fd;
+              read_buffer_size = default_read_buffer_size;
+              address }
       ) (fun e ->
           Lwt_unix.close fd
           >>= fun () ->
@@ -297,6 +296,7 @@ module Tcp = struct
 end
 
 module Udp = struct
+
   include Common
 
   type flow = {
@@ -317,17 +317,20 @@ module Udp = struct
 
     let fd = Lwt_unix.socket Lwt_unix.PF_INET Lwt_unix.SOCK_DGRAM 0 in
     (* Win32 requires all sockets to be bound however macOS and Linux don't *)
-    (try Lwt_unix.bind fd (Lwt_unix.ADDR_INET(Unix.inet_addr_any, 0)) with _ -> ());
+    Lwt.catch (fun () ->
+        Lwt_unix.bind fd (Lwt_unix.ADDR_INET(Unix.inet_addr_any, 0))
+      ) (fun _ -> Lwt.return ())
+    >|= fun () ->
     let sockaddr = sockaddr_of_address address in
-    Lwt.return (Result.Ok (of_fd ?read_buffer_size sockaddr address fd))
+    Ok (of_fd ?read_buffer_size sockaddr address fd)
 
   let read t = match t.fd, t.already_read with
-  | None, _ -> Lwt.return `Eof
+  | None, _ -> Lwt.return (Ok `Eof)
   | Some _, Some data when Cstruct.len data > 0 ->
       t.already_read <- Some (Cstruct.sub data 0 0); (* next read is `Eof *)
-      Lwt.return (`Ok data)
+      Lwt.return (Ok (`Data data))
   | Some _, Some _ ->
-      Lwt.return `Eof
+      Lwt.return (Ok `Eof)
   | Some fd, None ->
       let buffer = Cstruct.create t.read_buffer_size in
       let bytes = Bytes.make t.read_buffer_size '\000' in
@@ -338,17 +341,17 @@ module Udp = struct
            >>= fun (n, _) ->
            Cstruct.blit_from_bytes bytes 0 buffer 0 n;
            let response = Cstruct.sub buffer 0 n in
-           Lwt.return (`Ok response)
+           Lwt.return (Ok (`Data response))
         ) (fun e ->
             Log.err (fun f -> f "%s: recvfrom caught %s returning Eof"
                         (string_of_flow t)
                         (Printexc.to_string e)
                     );
-            Lwt.return `Eof
+            Lwt.return (Ok `Eof)
           )
 
   let write t buf = match t.fd with
-  | None -> Lwt.return `Eof
+  | None -> Lwt.return (Error `Closed)
   | Some fd ->
       Lwt.catch
         (fun () ->
@@ -356,14 +359,13 @@ module Udp = struct
            let bytes = Bytes.make (Cstruct.len buf) '\000' in
            Cstruct.blit_to_bytes buf 0 bytes 0 (Cstruct.len buf);
            Lwt_unix.sendto fd bytes 0 (Bytes.length bytes) [] t.sockaddr
-           >>= fun _n ->
-           Lwt.return (`Ok ())
+           >|= fun _n -> Ok ()
         ) (fun e ->
             Log.err (fun f -> f "%s: sendto caught %s returning Eof"
                         (string_of_flow t)
                         (Printexc.to_string e)
                     );
-            Lwt.return `Eof
+            Lwt.return (Error `Closed)
           )
 
   let writev t bufs = write t (Cstruct.concat bufs)
@@ -392,8 +394,8 @@ module Udp = struct
     let fd = Lwt_unix.socket Lwt_unix.PF_INET Lwt_unix.SOCK_DGRAM 0 in
     try
       let sockaddr = sockaddr_of_address address in
-      Lwt_unix.bind fd sockaddr;
-      Lwt.return (Result.Ok { server_fd = Some fd; address })
+      Lwt_unix.bind fd sockaddr >|= fun () ->
+      Ok { server_fd = Some fd; address }
     with
     | e -> errorf "udp:%s: bind caught %s"
              (string_of_address address) (Printexc.to_string e)
@@ -453,26 +455,9 @@ end
 
 module Time = struct
   type 'a io = 'a Lwt.t
-  let sleep = Lwt_unix.sleep
+  let sleep_ns ns = Lwt_unix.sleep (Duration.to_f ns)
 end
-
-module Clock = struct
-  type tm =
-    { tm_sec: int;
-      tm_min: int;
-      tm_hour: int;
-      tm_mday: int;
-      tm_mon: int;
-      tm_year: int;
-      tm_wday: int;
-      tm_yday: int;
-      tm_isdst: bool;
-    }
-
-  let time = Unix.gettimeofday
-
-  let gmtime _ = failwith "gmtime unimplemented"
-end
+module Clock = Mclock
 
 module R = struct
   open Dns_forward
