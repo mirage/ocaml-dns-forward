@@ -2,10 +2,10 @@ opam-version: "1.2"
 maintainer:   "dave@recoil.org"
 authors:      ["David Scott"]
 license:      "ISC"
-homepage:     "https://github.com/djs55/ocaml-dns-forward"
-bug-reports:  "https://github.com/djs55/ocaml-dns-forward"
-dev-repo:     "https://github.com/djs55/ocaml-dns-forward"
-doc:          "https://github.com/djs55/ocaml-dns-forward"
+homepage:     "https://github.com/mirage/ocaml-dns-forward"
+bug-reports:  "https://github.com/mirage/ocaml-dns-forward/issues"
+dev-repo:     "https://github.com/mirage/ocaml-dns-forward.git"
+doc:          "https://mirage.github.io//ocaml-dns-forward/"
 
 build: [
   ["jbuilder" "subst"] {pinned}
