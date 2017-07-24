@@ -1,3 +1,7 @@
+### 0.9.0 (2017-07-24)
+
+- Port to MirageOS 3.0 (#70, @samoht)
+
 ### 0.8.4 (2017-03-28)
 
 - if we fail to resolver a name, timeout rather than sending NXDomain
