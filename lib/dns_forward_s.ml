@@ -26,6 +26,7 @@ module type FLOW_CLIENT = sig
   type address
   val connect: ?read_buffer_size:int -> address
     -> (flow, [ `Msg of string ]) Lwt_result.t
+  val should_cache_connections: bool
 end
 
 module type FLOW_SERVER = sig
