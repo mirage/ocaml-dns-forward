@@ -690,6 +690,8 @@ let () =
                    (Printexc.get_backtrace ())
                )
     );
+  Nocrypto_entropy_unix.initialize ();
+
   Alcotest.run "dns-forward" [
     "Test infrastructure", test_infra_set;
     "Test forwarding", test_forwarder_set;

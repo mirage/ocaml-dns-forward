@@ -18,8 +18,8 @@
 type t
 (** A finite set of free integer ids *)
 
-val make: ?max_id:int -> unit -> t
-(** Construct a free set with the given maximum *)
+val make: ?max_elements:int -> unit -> t
+(** Construct a free set with the given maximum number of elements *)
 
 val with_id: t -> (int -> 'a Lwt.t) -> 'a Lwt.t
 (** [with_id t f] waits for an id to become free and then calls [f id] with it *)
