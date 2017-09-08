@@ -142,6 +142,91 @@ let test_local_lookups () =
       Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   | Error (`Msg m) -> failwith m
 
+let test_udp_nonpersistent () =
+  Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+  match Lwt_main.run begin
+      let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Udp(Flow))(NormalTime) in
+      let module Proto_client = Dns_forward.Rpc.Client.Nonpersistent.Make(Flow)(Dns_forward.Framing.Udp(Flow))(NormalTime) in
+      let module S = Server.Make(Proto_server) in
+      let foo_public = "8.8.8.8" in
+      (* a public server mapping 'foo' to a public ip *)
+      let public_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
+      let port = fresh_port () in
+      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
+      let open Error in
+      S.serve ~address:public_address public_server
+      >>= fun _ ->
+      let module R = Dns_forward.Resolver.Make(Proto_client)(NormalTime)(Mclock) in
+      let open Dns_forward.Config in
+      let servers = Server.Set.of_list [
+          { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
+        ] in
+      let config = { servers; search = []; assume_offline_after_drops = None } in
+      let open Lwt.Infix in
+      Mclock.connect () >>=
+      R.create config
+      >>= fun r ->
+      let module F = Dns_forward.Server.Make(Proto_server)(R) in
+      F.create r
+      >>= fun f ->
+      let port = fresh_port () in
+      let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
+      let open Error in
+      F.serve ~address:f_address f
+      >>= fun () ->
+      let expected_dst = ref false in
+      let message_cb ?src:_ ?dst ~buf:_ () =
+        ( match dst with
+        | Some d ->
+            if Dns_forward.Config.Address.compare f_address d = 0 then expected_dst := true
+        | None ->
+            ()
+        );
+        Lwt.return_unit
+      in
+      Proto_client.connect ~message_cb f_address
+      >>= fun c ->
+      let request = make_a_query (Dns.Name.of_string "foo") in
+      let send_request () =
+        Proto_client.rpc c request
+        >>= fun response ->
+        (* Check the response has the correct transaction id *)
+        let request' = Dns.Packet.parse request
+        and response' = Dns.Packet.parse response in
+        Alcotest.(check int) "DNS.id" request'.Dns.Packet.id response'.Dns.Packet.id;
+        parse_response response
+        >>= fun ipv4 ->
+        Alcotest.(check string) "IPv4" foo_public (Ipaddr.V4.to_string ipv4);
+        Lwt.return (Ok ()) in
+      let rec seq f = function
+      | 0 -> Lwt.return (Ok ())
+      | n ->
+          f ()
+          >>= fun () ->
+          seq f (n - 1) in
+      let rec par f = function
+      | 0 -> Lwt.return (Ok ())
+      | n ->
+          let first = f () in
+          let rest = par f (n - 1) in
+          first
+          >>= fun () ->
+          rest in
+      (* Run 5 threads each sending 1000 requests *)
+      par (fun () -> seq send_request 1000) 5
+      >>= fun () ->
+      let open Lwt.Infix in
+      Proto_client.disconnect c
+      >>= fun () ->
+      F.destroy f
+      >>= fun () ->
+      if not (!expected_dst) then failwith ("Expected destination address never seen in message_cb");
+      Lwt.return (Ok ())
+    end with
+  | Ok () ->
+      Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+  | Error (`Msg m) -> failwith m
+
 let test_tcp_multiplexing () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   match Lwt_main.run begin
@@ -647,6 +732,7 @@ let test_infra_set = [
 
 let test_protocol_set = [
   "TCP multiplexing", `Quick, test_tcp_multiplexing;
+  "UDP non-persistent", `Quick, test_udp_nonpersistent;
 ]
 
 let test_forwarder_set = [
