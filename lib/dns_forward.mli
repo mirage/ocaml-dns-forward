@@ -45,11 +45,6 @@ module Flow: sig
     val connect: ?read_buffer_size:int -> address -> flow Error.t
     (** [connect address] creates a connection to [address] and returns
         he connected flow. *)
-
-    val should_cache_connections: bool
-    (** True if this client connections should be cached and reused.
-        If false, the connections will be disconnected and reconnected
-        each time. *)
   end
   module type Server = sig
     type server

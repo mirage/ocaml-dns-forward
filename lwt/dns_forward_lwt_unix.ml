@@ -69,9 +69,6 @@ end
 module Tcp = struct
   include Common
 
-  (* TCP connections are fairly expensive *)
-  let should_cache_connections = true
-
   type flow = {
     mutable fd: Lwt_unix.file_descr option;
     read_buffer_size: int;
@@ -301,10 +298,6 @@ end
 module Udp = struct
 
   include Common
-
-  (* UDP "connections" are cheap, and we would like to use a different source
-     port each time to make responses harder to spoof. *)
-  let should_cache_connections = false
 
   type flow = {
     mutable fd: Lwt_unix.file_descr option;
