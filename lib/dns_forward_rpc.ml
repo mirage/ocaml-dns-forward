@@ -26,6 +26,89 @@ module Client = struct
 
   module type S = Dns_forward_s.RPC_CLIENT
 
+  module Nonpersistent = struct
+    module Make
+      (Sockets: Dns_forward_s.FLOW_CLIENT with type address = Ipaddr.t * int)
+      (Packet: Dns_forward_s.READERWRITER with type flow = Sockets.flow)
+      (Time: Mirage_time_lwt.S) = struct
+        type address = Dns_forward_config.Address.t
+        type request = Cstruct.t
+        type response = Cstruct.t
+
+        type message_cb = ?src:address -> ?dst:address -> buf:Cstruct.t -> unit -> unit Lwt.t
+
+        type t = {
+          address: address;
+          free_ids: Dns_forward_free_id.t;
+          message_cb: message_cb;
+        }
+
+        let connect ?(message_cb = fun ?src:_ ?dst:_ ~buf:_ () -> Lwt.return_unit) address =
+          let free_ids = Dns_forward_free_id.make () in
+          Lwt_result.return { address; free_ids; message_cb }
+
+        let to_string t = Dns_forward_config.Address.to_string t.address
+
+        let rpc (t: t) buffer =
+          let buf = buffer in
+          match Dns.Protocol.Server.parse (Cstruct.sub buf 0 (Cstruct.len buffer)) with
+          | Some request ->
+            (* Although we aren't multiplexing requests on the same flow (unlike the
+               Persistent case below) we still rewrite the request id
+               - to limit the number of sockets we allocate
+               - to work around clients who use predictable request ids *)
+
+              (* The id whose scope is the link to the client *)
+              let client_id = request.Dns.Packet.id in
+              (* The id whose scope is the link to the server *)
+              Dns_forward_free_id.with_id t.free_ids
+                (fun free_id ->
+                  (* Copy the buffer since this function will be run in parallel with the
+                     same buffer *)
+                  let buffer =
+                    let tmp = Cstruct.create (Cstruct.len buffer) in
+                    Cstruct.blit buffer 0 tmp 0 (Cstruct.len buffer);
+                    tmp in
+                  (* Rewrite the query id before forwarding *)
+                  Cstruct.BE.set_uint16 buffer 0 free_id;
+                  Log.debug (fun f -> f "%s mapping DNS id %d -> %d" (to_string t) client_id free_id);
+
+                  let open Lwt_result.Infix in
+                  Sockets.connect (t.address.Dns_forward_config.Address.ip, t.address.Dns_forward_config.Address.port)
+                  >>= fun flow ->
+                  Lwt.finalize
+                    (fun () ->
+                      let rw = Packet.connect flow in
+                      let open Lwt.Infix in
+                      t.message_cb ~dst:t.address ~buf:buffer ()
+                      >>= fun () ->
+                      let open Lwt_result.Infix in
+
+                      (* An existing connection to the server might have been closed by the server;
+                        therefore if we fail to write the request, reconnect and try once more. *)
+                      Packet.write rw buffer
+                      >>= fun () ->
+                      Packet.read rw
+                      >>= fun buf ->
+                      let open Lwt.Infix in
+                      t.message_cb ~src:t.address ~buf ()
+                      >>= fun () ->
+                      (* Rewrite the query id back to the original *)
+                      Cstruct.BE.set_uint16 buf 0 client_id;
+                      Lwt_result.return buf
+                    ) (fun () ->
+                      Sockets.close flow
+                    )
+                )
+          | _ ->
+          Log.err (fun f -> f "%s: rpc: failed to parse request" (to_string t));
+          Lwt_result.fail (`Msg (to_string t ^ ":failed to parse request"))
+
+        let disconnect _ =
+          Lwt.return_unit
+    end
+  end
+
   module Persistent = struct
   module Make
       (Sockets: Dns_forward_s.FLOW_CLIENT with type address = Ipaddr.t * int)

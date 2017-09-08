@@ -217,7 +217,15 @@ module Rpc: sig
           (Flow: Flow.Client with type address = Ipaddr.t * int)
           (Framing: Framing.S with type flow = Flow.flow)
           (Time: Mirage_time_lwt.S): S
-      (** Construct an RPC client given a Flow and a method of Framing messages
+      (** Construct a multiplexing RPC client given a Flow and a method of Framing messages
+          over the flow. *)
+    end
+    module Nonpersistent: sig
+      module Make
+          (Flow: Flow.Client with type address = Ipaddr.t * int)
+          (Framing: Framing.S with type flow = Flow.flow)
+          (Time: Mirage_time_lwt.S): S
+      (** Construct an RPC client given a Flow which sends one message per fresh connection
           over the flow. *)
     end
   end

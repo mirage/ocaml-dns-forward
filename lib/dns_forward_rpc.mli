@@ -27,6 +27,13 @@ module Client: sig
         (Time: Mirage_time_lwt.S):
       S
   end
+  module Nonpersistent: sig
+    module Make
+        (Flow: Dns_forward_s.FLOW_CLIENT with type address = Ipaddr.t * int)
+        (Framing: Dns_forward_s.READERWRITER with type flow = Flow.flow)
+        (Time: Mirage_time_lwt.S):
+      S
+  end
 end
 
 module Server: sig
