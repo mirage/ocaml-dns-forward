@@ -32,13 +32,21 @@ let parse_response response =
       | xs -> Lwt.return (Error (`Msg (Printf.sprintf "failed to find answers: [ %s ]" (String.concat "; " (List.map Dns.Packet.rr_to_string xs)))))
       end
 
+let fresh_port =
+  let next = ref 0 in
+  fun () ->
+    let port = !next in
+    incr next;
+    port
+
 let test_server () =
   match Lwt_main.run begin
       let module S = Server.Make(Rpc) in
       let s = S.make [ "foo", Ipaddr.V4 Ipaddr.V4.localhost; "bar", Ipaddr.of_string_exn "1.2.3.4" ] in
       let open Error in
       (* The virtual address we run our server on: *)
-      let address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 53 } in
+      let port = fresh_port () in
+      let address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       S.serve ~address s
       >>= fun _ ->
       let expected_dst = ref false in
@@ -82,7 +90,8 @@ let test_local_lookups () =
       let foo_private = "192.168.1.1" in
       (* a public server mapping 'foo' to a public ip *)
       let public_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
-      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 4 } in
+      let port = fresh_port () in
+      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       let open Error in
       S.serve ~address:public_address public_server
       >>= fun _ ->
@@ -109,7 +118,8 @@ let test_local_lookups () =
       let module F = Dns_forward.Server.Make(Rpc)(R) in
       F.create r
       >>= fun f ->
-      let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 5 } in
+      let port = fresh_port () in
+      let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       let open Error in
       F.serve ~address:f_address f
       >>= fun () ->
@@ -141,7 +151,8 @@ let test_tcp_multiplexing () =
       let foo_public = "8.8.8.8" in
       (* a public server mapping 'foo' to a public ip *)
       let public_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
-      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 6 } in
+      let port = fresh_port () in
+      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       let open Error in
       S.serve ~address:public_address public_server
       >>= fun _ ->
@@ -158,7 +169,8 @@ let test_tcp_multiplexing () =
       let module F = Dns_forward.Server.Make(Proto_server)(R) in
       F.create r
       >>= fun f ->
-      let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 7 } in
+      let port = fresh_port () in
+      let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       let open Error in
       F.serve ~address:f_address f
       >>= fun () ->
@@ -225,12 +237,14 @@ let test_good_bad_server () =
       let foo_public = "8.8.8.8" in
       (* a public server mapping 'foo' to a public ip *)
       let public_server = S.make ~delay:0.1 [ "foo", Ipaddr.of_string_exn foo_public ] in
-      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 12 } in
+      let port = fresh_port () in
+      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       let open Error in
       S.serve ~address:public_address public_server
       >>= fun _ ->
       let bad_server = S.make [] in
-      let bad_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 999 } in
+      let port = fresh_port () in
+      let bad_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       S.serve ~address:bad_address bad_server
       >>= fun _ ->
       let module R = Dns_forward.Resolver.Make(Proto_client)(NormalTime)(Mclock) in
@@ -286,15 +300,15 @@ let test_good_dead_server () =
       (* a public server mapping 'foo' to a public ip *)
       let public_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
       let public_address =
-        let ip, port = Flow.find_free_address () in
-        { Dns_forward.Config.Address.ip; port } in
+        let port = fresh_port () in
+        { Dns_forward.Config.Address.ip = Ipaddr.(V4 V4.localhost); port } in
       let open Error in
       S.serve ~address:public_address public_server
       >>= fun _ ->
       let bad_server = S.make ~delay:30. [] in
       let bad_address =
-        let ip, port = Flow.find_free_address () in
-        { Dns_forward.Config.Address.ip; port } in
+        let port = fresh_port () in
+        { Dns_forward.Config.Address.ip = Ipaddr.(V4 V4.localhost); port } in
       S.serve ~address:bad_address bad_server
       >>= fun _ ->
       let module R = Dns_forward.Resolver.Make(Proto_client)(Fake.Time)(Fake.Clock) in
@@ -365,13 +379,15 @@ let test_bad_server () =
       let foo_public = "8.8.8.8" in
       (* a public server mapping 'foo' to a public ip *)
       let public_server = S.make ~simulate_bad_question:true [ "foo", Ipaddr.of_string_exn foo_public ] in
-      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 13 } in
+      let port = fresh_port () in
+      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       let open Error in
       S.serve ~address:public_address public_server
       >>= fun _ ->
       let module R = Dns_forward.Resolver.Make(Proto_client)(NormalTime)(Mclock) in
       let open Dns_forward.Config in
-      let bad_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 999 } in
+      let port = fresh_port () in
+      let bad_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       (* Forward to a good server and a bad server, both with timeouts. The request to
          the bad request should fail fast but the good server should be given up to
          the timeout to respond *)
@@ -413,7 +429,8 @@ let test_timeout () =
   let foo_public = "8.8.8.8" in
   (* a public server mapping 'foo' to a public ip *)
   let bar_server = S.make ~delay:60. [ "foo", Ipaddr.of_string_exn foo_public ] in
-  let bar_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 8 } in
+  let port = fresh_port () in
+  let bar_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
 
   let open Error in
   match Lwt_main.run begin
@@ -461,7 +478,8 @@ let test_cache () =
   let foo_public = "8.8.8.8" in
   (* a public server mapping 'foo' to a public ip *)
   let bar_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
-  let bar_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 12 } in
+  let port = fresh_port () in
+  let bar_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
 
   let open Error in
   match Lwt_main.run begin
@@ -511,10 +529,12 @@ let test_order () =
   let foo_private = "192.168.1.1" in
   (* a public server mapping 'foo' to a public ip *)
   let public_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
-  let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 10 } in
+  let port = fresh_port () in
+  let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
   (* a private server mapping 'foo' to a private ip *)
   let private_server = S.make [ "foo", Ipaddr.of_string_exn foo_private ] in
-  let private_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 11 } in
+  let port = fresh_port () in
+  let private_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
 
   let open Error in
   match Lwt_main.run begin
@@ -562,10 +582,12 @@ let test_forwarder_zone () =
   let foo_private = "192.168.1.1" in
   (* a VPN mapping 'foo' to an internal ip *)
   let foo_server = S.make [ "foo", Ipaddr.of_string_exn foo_private ] in
-  let foo_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 1 } in
+  let port = fresh_port () in
+  let foo_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
   (* a public server mapping 'foo' to a public ip *)
   let bar_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
-  let bar_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 2 } in
+  let port = fresh_port () in
+  let bar_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
 
   let open Error in
   match Lwt_main.run begin
@@ -589,7 +611,8 @@ let test_forwarder_zone () =
       let module F = Dns_forward.Server.Make(Rpc)(R) in
       F.create r
       >>= fun f ->
-      let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 3 } in
+      let port = fresh_port () in
+      let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       let open Error in
       F.serve ~address:f_address f
       >>= fun () ->
