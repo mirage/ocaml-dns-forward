@@ -461,7 +461,7 @@ module Clock = Mclock
 
 module R = struct
   open Dns_forward
-  module Udp_client = Rpc.Client.Persistent.Make(Udp)(Framing.Udp(Udp))(Time)
+  module Udp_client = Rpc.Client.Nonpersistent.Make(Udp)(Framing.Udp(Udp))(Time)
   module Udp = Resolver.Make(Udp_client)(Time)(Clock)
 
   module Tcp_client = Rpc.Client.Persistent.Make(Tcp)(Framing.Tcp(Tcp))(Time)
