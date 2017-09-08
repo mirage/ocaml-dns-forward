@@ -212,12 +212,14 @@ module Rpc: sig
       (** Disconnect from the server and free all resources. *)
     end
 
-    module Make
-        (Flow: Flow.Client with type address = Ipaddr.t * int)
-        (Framing: Framing.S with type flow = Flow.flow)
-        (Time: Mirage_time_lwt.S): S
-    (** Construct an RPC client given a Flow and a method of Framing messages
-        over the flow. *)
+    module Persistent: sig
+      module Make
+          (Flow: Flow.Client with type address = Ipaddr.t * int)
+          (Framing: Framing.S with type flow = Flow.flow)
+          (Time: Mirage_time_lwt.S): S
+      (** Construct an RPC client given a Flow and a method of Framing messages
+          over the flow. *)
+    end
   end
 
   module Server: sig

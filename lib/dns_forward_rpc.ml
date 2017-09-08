@@ -26,6 +26,7 @@ module Client = struct
 
   module type S = Dns_forward_s.RPC_CLIENT
 
+  module Persistent = struct
   module Make
       (Sockets: Dns_forward_s.FLOW_CLIENT with type address = Ipaddr.t * int)
       (Packet: Dns_forward_s.READERWRITER with type flow = Sockets.flow)
@@ -224,6 +225,7 @@ module Client = struct
           Log.err (fun f -> f "%s: rpc: failed to parse request" (to_string t));
           Lwt_result.fail (`Msg (to_string t ^ ":failed to parse request"))
   end
+end
 end
 
 module Server = struct

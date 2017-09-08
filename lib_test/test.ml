@@ -136,7 +136,7 @@ let test_tcp_multiplexing () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   match Lwt_main.run begin
       let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
-      let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+      let module Proto_client = Dns_forward.Rpc.Client.Persistent.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
       let module S = Server.Make(Proto_server) in
       let foo_public = "8.8.8.8" in
       (* a public server mapping 'foo' to a public ip *)
@@ -220,7 +220,7 @@ let test_good_bad_server () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   match Lwt_main.run begin
       let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
-      let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+      let module Proto_client = Dns_forward.Rpc.Client.Persistent.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
       let module S = Server.Make(Proto_server) in
       let foo_public = "8.8.8.8" in
       (* a public server mapping 'foo' to a public ip *)
@@ -280,7 +280,7 @@ let test_good_dead_server () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   match Lwt_main.run begin
       let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Fake.Time) in
-      let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Fake.Time) in
+      let module Proto_client = Dns_forward.Rpc.Client.Persistent.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Fake.Time) in
       let module S = Server.Make(Proto_server) in
       let foo_public = "8.8.8.8" in
       (* a public server mapping 'foo' to a public ip *)
@@ -360,7 +360,7 @@ let test_bad_server () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   match Lwt_main.run begin
       let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
-      let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+      let module Proto_client = Dns_forward.Rpc.Client.Persistent.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
       let module S = Server.Make(Proto_server) in
       let foo_public = "8.8.8.8" in
       (* a public server mapping 'foo' to a public ip *)
@@ -408,7 +408,7 @@ let test_bad_server () =
 let test_timeout () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
-  let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+  let module Proto_client = Dns_forward.Rpc.Client.Persistent.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
   let module S = Server.Make(Proto_server) in
   let foo_public = "8.8.8.8" in
   (* a public server mapping 'foo' to a public ip *)
@@ -456,7 +456,7 @@ let test_timeout () =
 let test_cache () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
-  let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+  let module Proto_client = Dns_forward.Rpc.Client.Persistent.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
   let module S = Server.Make(Proto_server) in
   let foo_public = "8.8.8.8" in
   (* a public server mapping 'foo' to a public ip *)
@@ -505,7 +505,7 @@ let test_cache () =
 let test_order () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
-  let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+  let module Proto_client = Dns_forward.Rpc.Client.Persistent.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
   let module S = Server.Make(Proto_server) in
   let foo_public = "8.8.8.8" in
   let foo_private = "192.168.1.1" in
