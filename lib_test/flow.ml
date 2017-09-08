@@ -117,7 +117,7 @@ let getsockname server = server.address
 
 let connect ?read_buffer_size:_ address =
   if Hashtbl.mem bound address then begin
-    Hashtbl.replace nr_connects address (if Hashtbl.mem nr_connects address then Hashtbl.find nr_connects address else 1);
+    Hashtbl.replace nr_connects address (if Hashtbl.mem nr_connects address then Hashtbl.find nr_connects address + 1 else 1);
     let cb = (Hashtbl.find bound address).listen_cb in
     let open Error in
     cb ()
