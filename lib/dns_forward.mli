@@ -200,7 +200,7 @@ module Rpc: sig
           If an address is unknown (e.g. it is selected by the kernel when routing
           the packets) then the corresponding argument will be omitted *)
 
-      val connect: ?message_cb:message_cb -> address -> t Error.t
+      val connect: gen_transaction_id:(int -> int) -> ?message_cb:message_cb -> address -> t Error.t
       (** Connect to the remote server *)
 
       val rpc: t -> request -> response Error.t
@@ -281,6 +281,7 @@ module Resolver: sig
 
     val create:
       ?local_names_cb:(Dns.Packet.question -> Dns.Packet.rr list option Lwt.t) ->
+      gen_transaction_id:(int -> int) ->
       ?message_cb:message_cb ->
       Config.t -> clock -> t Lwt.t
     (** Construct a resolver given some configuration *)

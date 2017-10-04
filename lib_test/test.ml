@@ -59,7 +59,7 @@ let test_server () =
         );
         Lwt.return_unit
       in
-      Rpc.connect ~message_cb address
+      Rpc.connect ~gen_transaction_id:Random.int ~message_cb address
       >>= fun c ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       Rpc.rpc c request
@@ -113,7 +113,7 @@ let test_local_lookups () =
             Lwt.return None
       in
       Mclock.connect () >>=
-      R.create ~local_names_cb config
+      R.create ~local_names_cb ~gen_transaction_id:Random.int config
       >>= fun r ->
       let module F = Dns_forward.Server.Make(Rpc)(R) in
       F.create r
@@ -123,7 +123,7 @@ let test_local_lookups () =
       let open Error in
       F.serve ~address:f_address f
       >>= fun () ->
-      Rpc.connect f_address
+      Rpc.connect ~gen_transaction_id:Random.int f_address
       >>= fun c ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       Rpc.rpc c request
@@ -164,7 +164,7 @@ let test_udp_nonpersistent () =
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
       Mclock.connect () >>=
-      R.create config
+      R.create ~gen_transaction_id:Random.int config
       >>= fun r ->
       let module F = Dns_forward.Server.Make(Proto_server)(R) in
       F.create r
@@ -184,7 +184,7 @@ let test_udp_nonpersistent () =
         );
         Lwt.return_unit
       in
-      Proto_client.connect ~message_cb f_address
+      Proto_client.connect ~gen_transaction_id:Random.int ~message_cb f_address
       >>= fun c ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       let send_request () =
@@ -249,7 +249,7 @@ let test_tcp_multiplexing () =
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
       Mclock.connect () >>=
-      R.create config
+      R.create ~gen_transaction_id:Random.int config
       >>= fun r ->
       let module F = Dns_forward.Server.Make(Proto_server)(R) in
       F.create r
@@ -269,7 +269,7 @@ let test_tcp_multiplexing () =
         );
         Lwt.return_unit
       in
-      Proto_client.connect ~message_cb f_address
+      Proto_client.connect ~gen_transaction_id:Random.int ~message_cb f_address
       >>= fun c ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       let send_request () =
@@ -344,7 +344,7 @@ let test_good_bad_server () =
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
       Mclock.connect () >>=
-      R.create config
+      R.create ~gen_transaction_id:Random.int config
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       let request =
@@ -407,7 +407,7 @@ let test_good_dead_server () =
         ] in
       let config = { servers; search = []; assume_offline_after_drops = Some 1 } in
       let open Lwt.Infix in
-      R.create config ()
+      R.create ~gen_transaction_id:Random.int config ()
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       let t = R.answer request r in
@@ -483,7 +483,7 @@ let test_bad_server () =
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
       Mclock.connect () >>=
-      R.create config
+      R.create ~gen_transaction_id:Random.int config
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       let request =
@@ -530,7 +530,7 @@ let test_timeout () =
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
       Mclock.connect () >>=
-      R.create config
+      R.create ~gen_transaction_id:Random.int config
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       let request =
@@ -579,7 +579,7 @@ let test_cache () =
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
       Mclock.connect () >>=
-      R.create config
+      R.create ~gen_transaction_id:Random.int config
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       R.answer request r
@@ -638,7 +638,7 @@ let test_order () =
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
       Mclock.connect () >>=
-      R.create config
+      R.create ~gen_transaction_id:Random.int config
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       let open Error in
@@ -691,7 +691,7 @@ let test_forwarder_zone () =
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
       Mclock.connect () >>=
-      R.create config
+      R.create ~gen_transaction_id:Random.int config
       >>= fun r ->
       let module F = Dns_forward.Server.Make(Rpc)(R) in
       F.create r
@@ -701,7 +701,7 @@ let test_forwarder_zone () =
       let open Error in
       F.serve ~address:f_address f
       >>= fun () ->
-      Rpc.connect f_address
+      Rpc.connect ~gen_transaction_id:Random.int f_address
       >>= fun c ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       Rpc.rpc c request
@@ -799,7 +799,7 @@ let () =
                    (Printexc.get_backtrace ())
                )
     );
-  Nocrypto_entropy_unix.initialize ();
+  Random.self_init ();
 
   Alcotest.run "dns-forward" [
     "Test infrastructure", test_infra_set;

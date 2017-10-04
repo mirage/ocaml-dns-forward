@@ -43,8 +43,11 @@ module Client = struct
           message_cb: message_cb;
         }
 
-        let connect ?(message_cb = fun ?src:_ ?dst:_ ~buf:_ () -> Lwt.return_unit) address =
-          let free_ids = Dns_forward_free_id.make () in
+        let connect
+          ~gen_transaction_id
+          ?(message_cb = fun ?src:_ ?dst:_ ~buf:_ () -> Lwt.return_unit)
+          address =
+          let free_ids = Dns_forward_free_id.make ~g:gen_transaction_id () in
           Lwt_result.return { address; free_ids; message_cb }
 
         let to_string t = Dns_forward_config.Address.to_string t.address
@@ -220,12 +223,12 @@ module Client = struct
       t.disconnect_on_idle <- (let open Lwt.Infix in Time.sleep_ns Duration.(of_sec 30) >>= fun () -> disconnect t);
       Lwt_result.return rw
 
-    let connect ?(message_cb = fun ?src:_ ?dst:_ ~buf:_ () -> Lwt.return_unit) address =
+    let connect ~gen_transaction_id ?(message_cb = fun ?src:_ ?dst:_ ~buf:_ () -> Lwt.return_unit) address =
       let rw = None in
       let m = Lwt_mutex.create () in
       let disconnect_on_idle = Lwt.return_unit in
       let wakeners = Hashtbl.create 7 in
-      let free_ids = Dns_forward_free_id.make () in
+      let free_ids = Dns_forward_free_id.make ~g:gen_transaction_id () in
       let client_address = { Dns_forward_config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 0 } in
       Lwt_result.return { client_address; address; rw; disconnect_on_idle; wakeners; m; free_ids; message_cb }
 

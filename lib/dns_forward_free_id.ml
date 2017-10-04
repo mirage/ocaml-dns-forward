@@ -25,12 +25,13 @@ type t = {
   mutable used_ids: IntSet.t; (* used by in-progress requests *)
   max_elements: int; (* bound on the number of in-progress requests *)
   free_ids_c: unit Lwt_condition.t;
+  g: int -> int; (* generate unpredictable id *)
 }
 
-let make ?(max_elements = 512) () =
+let make ~g ?(max_elements = 512) () =
   let used_ids = IntSet.empty in
   let free_ids_c = Lwt_condition.create () in
-  { max_elements; used_ids; free_ids_c }
+  { max_elements; used_ids; free_ids_c; g }
 
 let rec with_id t f =
   let open Lwt.Infix in
@@ -42,7 +43,7 @@ let rec with_id t f =
     let rec find_free_id () =
       (* [gen n] picks a value in the interval [0, n-1]. DNS transaction
          ids are between [0, 0xffff] *)
-      let id = Nocrypto.Rng.Int.gen 0x10000 in
+      let id = t.g 0x10000 in
       if IntSet.mem id t.used_ids
       then find_free_id ()
       else id in

@@ -2,7 +2,7 @@
 
 (executables
  ((names (test))
-  (libraries   (dns-forward dns-forward-lwt-unix nocrypto.unix logs logs.fmt alcotest))))
+  (libraries   (dns-forward dns-forward-lwt-unix logs logs.fmt alcotest))))
 
 (alias
  ((name    runtest)

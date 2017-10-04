@@ -102,9 +102,9 @@ struct
     config: Dns_forward_config.t;
   }
 
-  let create ?(local_names_cb=fun _ -> Lwt.return_none) ?message_cb config clock =
+  let create ?(local_names_cb=fun _ -> Lwt.return_none) ~gen_transaction_id ?message_cb config clock =
     Lwt_list.map_s (fun server ->
-        or_fail_msg @@ Client.connect ?message_cb server.Dns_forward_config.Server.address
+        or_fail_msg @@ Client.connect ~gen_transaction_id ?message_cb server.Dns_forward_config.Server.address
         >>= fun client ->
         let reply_expected_since = None in
         let replies_missing = 0 in
