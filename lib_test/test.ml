@@ -32,13 +32,21 @@ let parse_response response =
       | xs -> Lwt.return (Error (`Msg (Printf.sprintf "failed to find answers: [ %s ]" (String.concat "; " (List.map Dns.Packet.rr_to_string xs)))))
       end
 
+let fresh_port =
+  let next = ref 0 in
+  fun () ->
+    let port = !next in
+    incr next;
+    port
+
 let test_server () =
   match Lwt_main.run begin
       let module S = Server.Make(Rpc) in
       let s = S.make [ "foo", Ipaddr.V4 Ipaddr.V4.localhost; "bar", Ipaddr.of_string_exn "1.2.3.4" ] in
       let open Error in
       (* The virtual address we run our server on: *)
-      let address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 53 } in
+      let port = fresh_port () in
+      let address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       S.serve ~address s
       >>= fun _ ->
       let expected_dst = ref false in
@@ -51,7 +59,7 @@ let test_server () =
         );
         Lwt.return_unit
       in
-      Rpc.connect ~message_cb address
+      Rpc.connect ~gen_transaction_id:Random.int ~message_cb address
       >>= fun c ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       Rpc.rpc c request
@@ -82,7 +90,8 @@ let test_local_lookups () =
       let foo_private = "192.168.1.1" in
       (* a public server mapping 'foo' to a public ip *)
       let public_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
-      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 4 } in
+      let port = fresh_port () in
+      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       let open Error in
       S.serve ~address:public_address public_server
       >>= fun _ ->
@@ -104,16 +113,17 @@ let test_local_lookups () =
             Lwt.return None
       in
       Mclock.connect () >>=
-      R.create ~local_names_cb config
+      R.create ~local_names_cb ~gen_transaction_id:Random.int config
       >>= fun r ->
       let module F = Dns_forward.Server.Make(Rpc)(R) in
       F.create r
       >>= fun f ->
-      let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 5 } in
+      let port = fresh_port () in
+      let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       let open Error in
       F.serve ~address:f_address f
       >>= fun () ->
-      Rpc.connect f_address
+      Rpc.connect ~gen_transaction_id:Random.int f_address
       >>= fun c ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       Rpc.rpc c request
@@ -132,16 +142,17 @@ let test_local_lookups () =
       Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   | Error (`Msg m) -> failwith m
 
-let test_tcp_multiplexing () =
+let test_udp_nonpersistent () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   match Lwt_main.run begin
-      let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
-      let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+      let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Udp(Flow))(NormalTime) in
+      let module Proto_client = Dns_forward.Rpc.Client.Nonpersistent.Make(Flow)(Dns_forward.Framing.Udp(Flow))(NormalTime) in
       let module S = Server.Make(Proto_server) in
       let foo_public = "8.8.8.8" in
       (* a public server mapping 'foo' to a public ip *)
       let public_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
-      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 6 } in
+      let port = fresh_port () in
+      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       let open Error in
       S.serve ~address:public_address public_server
       >>= fun _ ->
@@ -153,12 +164,13 @@ let test_tcp_multiplexing () =
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
       Mclock.connect () >>=
-      R.create config
+      R.create ~gen_transaction_id:Random.int config
       >>= fun r ->
       let module F = Dns_forward.Server.Make(Proto_server)(R) in
       F.create r
       >>= fun f ->
-      let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 7 } in
+      let port = fresh_port () in
+      let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       let open Error in
       F.serve ~address:f_address f
       >>= fun () ->
@@ -172,7 +184,92 @@ let test_tcp_multiplexing () =
         );
         Lwt.return_unit
       in
-      Proto_client.connect ~message_cb f_address
+      Proto_client.connect ~gen_transaction_id:Random.int ~message_cb f_address
+      >>= fun c ->
+      let request = make_a_query (Dns.Name.of_string "foo") in
+      let send_request () =
+        Proto_client.rpc c request
+        >>= fun response ->
+        (* Check the response has the correct transaction id *)
+        let request' = Dns.Packet.parse request
+        and response' = Dns.Packet.parse response in
+        Alcotest.(check int) "DNS.id" request'.Dns.Packet.id response'.Dns.Packet.id;
+        parse_response response
+        >>= fun ipv4 ->
+        Alcotest.(check string) "IPv4" foo_public (Ipaddr.V4.to_string ipv4);
+        Lwt.return (Ok ()) in
+      let rec seq f = function
+      | 0 -> Lwt.return (Ok ())
+      | n ->
+          f ()
+          >>= fun () ->
+          seq f (n - 1) in
+      let rec par f = function
+      | 0 -> Lwt.return (Ok ())
+      | n ->
+          let first = f () in
+          let rest = par f (n - 1) in
+          first
+          >>= fun () ->
+          rest in
+      (* Run 5 threads each sending 1000 requests *)
+      par (fun () -> seq send_request 1000) 5
+      >>= fun () ->
+      let open Lwt.Infix in
+      Proto_client.disconnect c
+      >>= fun () ->
+      F.destroy f
+      >>= fun () ->
+      if not (!expected_dst) then failwith ("Expected destination address never seen in message_cb");
+      Lwt.return (Ok ())
+    end with
+  | Ok () ->
+      Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+  | Error (`Msg m) -> failwith m
+
+let test_tcp_multiplexing () =
+  Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
+  match Lwt_main.run begin
+      let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+      let module Proto_client = Dns_forward.Rpc.Client.Persistent.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+      let module S = Server.Make(Proto_server) in
+      let foo_public = "8.8.8.8" in
+      (* a public server mapping 'foo' to a public ip *)
+      let public_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
+      let port = fresh_port () in
+      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
+      let open Error in
+      S.serve ~address:public_address public_server
+      >>= fun _ ->
+      let module R = Dns_forward.Resolver.Make(Proto_client)(NormalTime)(Mclock) in
+      let open Dns_forward.Config in
+      let servers = Server.Set.of_list [
+          { Server.address = public_address; zones = Domain.Set.empty; timeout_ms = None; order = 0 };
+        ] in
+      let config = { servers; search = []; assume_offline_after_drops = None } in
+      let open Lwt.Infix in
+      Mclock.connect () >>=
+      R.create ~gen_transaction_id:Random.int config
+      >>= fun r ->
+      let module F = Dns_forward.Server.Make(Proto_server)(R) in
+      F.create r
+      >>= fun f ->
+      let port = fresh_port () in
+      let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
+      let open Error in
+      F.serve ~address:f_address f
+      >>= fun () ->
+      let expected_dst = ref false in
+      let message_cb ?src:_ ?dst ~buf:_ () =
+        ( match dst with
+        | Some d ->
+            if Dns_forward.Config.Address.compare f_address d = 0 then expected_dst := true
+        | None ->
+            ()
+        );
+        Lwt.return_unit
+      in
+      Proto_client.connect ~gen_transaction_id:Random.int ~message_cb f_address
       >>= fun c ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       let send_request () =
@@ -220,17 +317,19 @@ let test_good_bad_server () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   match Lwt_main.run begin
       let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
-      let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+      let module Proto_client = Dns_forward.Rpc.Client.Persistent.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
       let module S = Server.Make(Proto_server) in
       let foo_public = "8.8.8.8" in
       (* a public server mapping 'foo' to a public ip *)
       let public_server = S.make ~delay:0.1 [ "foo", Ipaddr.of_string_exn foo_public ] in
-      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 12 } in
+      let port = fresh_port () in
+      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       let open Error in
       S.serve ~address:public_address public_server
       >>= fun _ ->
       let bad_server = S.make [] in
-      let bad_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 999 } in
+      let port = fresh_port () in
+      let bad_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       S.serve ~address:bad_address bad_server
       >>= fun _ ->
       let module R = Dns_forward.Resolver.Make(Proto_client)(NormalTime)(Mclock) in
@@ -245,7 +344,7 @@ let test_good_bad_server () =
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
       Mclock.connect () >>=
-      R.create config
+      R.create ~gen_transaction_id:Random.int config
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       let request =
@@ -280,21 +379,21 @@ let test_good_dead_server () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   match Lwt_main.run begin
       let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Fake.Time) in
-      let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Fake.Time) in
+      let module Proto_client = Dns_forward.Rpc.Client.Persistent.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(Fake.Time) in
       let module S = Server.Make(Proto_server) in
       let foo_public = "8.8.8.8" in
       (* a public server mapping 'foo' to a public ip *)
       let public_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
       let public_address =
-        let ip, port = Flow.find_free_address () in
-        { Dns_forward.Config.Address.ip; port } in
+        let port = fresh_port () in
+        { Dns_forward.Config.Address.ip = Ipaddr.(V4 V4.localhost); port } in
       let open Error in
       S.serve ~address:public_address public_server
       >>= fun _ ->
       let bad_server = S.make ~delay:30. [] in
       let bad_address =
-        let ip, port = Flow.find_free_address () in
-        { Dns_forward.Config.Address.ip; port } in
+        let port = fresh_port () in
+        { Dns_forward.Config.Address.ip = Ipaddr.(V4 V4.localhost); port } in
       S.serve ~address:bad_address bad_server
       >>= fun _ ->
       let module R = Dns_forward.Resolver.Make(Proto_client)(Fake.Time)(Fake.Clock) in
@@ -308,7 +407,7 @@ let test_good_dead_server () =
         ] in
       let config = { servers; search = []; assume_offline_after_drops = Some 1 } in
       let open Lwt.Infix in
-      R.create config ()
+      R.create ~gen_transaction_id:Random.int config ()
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       let t = R.answer request r in
@@ -360,18 +459,20 @@ let test_bad_server () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   match Lwt_main.run begin
       let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
-      let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+      let module Proto_client = Dns_forward.Rpc.Client.Persistent.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
       let module S = Server.Make(Proto_server) in
       let foo_public = "8.8.8.8" in
       (* a public server mapping 'foo' to a public ip *)
       let public_server = S.make ~simulate_bad_question:true [ "foo", Ipaddr.of_string_exn foo_public ] in
-      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 13 } in
+      let port = fresh_port () in
+      let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       let open Error in
       S.serve ~address:public_address public_server
       >>= fun _ ->
       let module R = Dns_forward.Resolver.Make(Proto_client)(NormalTime)(Mclock) in
       let open Dns_forward.Config in
-      let bad_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 999 } in
+      let port = fresh_port () in
+      let bad_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       (* Forward to a good server and a bad server, both with timeouts. The request to
          the bad request should fail fast but the good server should be given up to
          the timeout to respond *)
@@ -382,7 +483,7 @@ let test_bad_server () =
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
       Mclock.connect () >>=
-      R.create config
+      R.create ~gen_transaction_id:Random.int config
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       let request =
@@ -408,12 +509,13 @@ let test_bad_server () =
 let test_timeout () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
-  let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+  let module Proto_client = Dns_forward.Rpc.Client.Persistent.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
   let module S = Server.Make(Proto_server) in
   let foo_public = "8.8.8.8" in
   (* a public server mapping 'foo' to a public ip *)
   let bar_server = S.make ~delay:60. [ "foo", Ipaddr.of_string_exn foo_public ] in
-  let bar_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 8 } in
+  let port = fresh_port () in
+  let bar_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
 
   let open Error in
   match Lwt_main.run begin
@@ -428,7 +530,7 @@ let test_timeout () =
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
       Mclock.connect () >>=
-      R.create config
+      R.create ~gen_transaction_id:Random.int config
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       let request =
@@ -456,12 +558,13 @@ let test_timeout () =
 let test_cache () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
-  let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+  let module Proto_client = Dns_forward.Rpc.Client.Persistent.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
   let module S = Server.Make(Proto_server) in
   let foo_public = "8.8.8.8" in
   (* a public server mapping 'foo' to a public ip *)
   let bar_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
-  let bar_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 12 } in
+  let port = fresh_port () in
+  let bar_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
 
   let open Error in
   match Lwt_main.run begin
@@ -476,7 +579,7 @@ let test_cache () =
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
       Mclock.connect () >>=
-      R.create config
+      R.create ~gen_transaction_id:Random.int config
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       R.answer request r
@@ -505,16 +608,18 @@ let test_cache () =
 let test_order () =
   Alcotest.(check int) "number of connections" 0 (List.length @@ Rpc.get_connections ());
   let module Proto_server = Dns_forward.Rpc.Server.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
-  let module Proto_client = Dns_forward.Rpc.Client.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
+  let module Proto_client = Dns_forward.Rpc.Client.Persistent.Make(Flow)(Dns_forward.Framing.Tcp(Flow))(NormalTime) in
   let module S = Server.Make(Proto_server) in
   let foo_public = "8.8.8.8" in
   let foo_private = "192.168.1.1" in
   (* a public server mapping 'foo' to a public ip *)
   let public_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
-  let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 10 } in
+  let port = fresh_port () in
+  let public_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
   (* a private server mapping 'foo' to a private ip *)
   let private_server = S.make [ "foo", Ipaddr.of_string_exn foo_private ] in
-  let private_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 11 } in
+  let port = fresh_port () in
+  let private_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
 
   let open Error in
   match Lwt_main.run begin
@@ -533,7 +638,7 @@ let test_order () =
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
       Mclock.connect () >>=
-      R.create config
+      R.create ~gen_transaction_id:Random.int config
       >>= fun r ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       let open Error in
@@ -562,10 +667,12 @@ let test_forwarder_zone () =
   let foo_private = "192.168.1.1" in
   (* a VPN mapping 'foo' to an internal ip *)
   let foo_server = S.make [ "foo", Ipaddr.of_string_exn foo_private ] in
-  let foo_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 1 } in
+  let port = fresh_port () in
+  let foo_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
   (* a public server mapping 'foo' to a public ip *)
   let bar_server = S.make [ "foo", Ipaddr.of_string_exn foo_public ] in
-  let bar_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 2 } in
+  let port = fresh_port () in
+  let bar_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
 
   let open Error in
   match Lwt_main.run begin
@@ -584,16 +691,17 @@ let test_forwarder_zone () =
       let config = { servers; search = []; assume_offline_after_drops = None } in
       let open Lwt.Infix in
       Mclock.connect () >>=
-      R.create config
+      R.create ~gen_transaction_id:Random.int config
       >>= fun r ->
       let module F = Dns_forward.Server.Make(Rpc)(R) in
       F.create r
       >>= fun f ->
-      let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port = 3 } in
+      let port = fresh_port () in
+      let f_address = { Dns_forward.Config.Address.ip = Ipaddr.V4 Ipaddr.V4.localhost; port } in
       let open Error in
       F.serve ~address:f_address f
       >>= fun () ->
-      Rpc.connect f_address
+      Rpc.connect ~gen_transaction_id:Random.int f_address
       >>= fun c ->
       let request = make_a_query (Dns.Name.of_string "foo") in
       Rpc.rpc c request
@@ -624,6 +732,7 @@ let test_infra_set = [
 
 let test_protocol_set = [
   "TCP multiplexing", `Quick, test_tcp_multiplexing;
+  "UDP non-persistent", `Quick, test_udp_nonpersistent;
 ]
 
 let test_forwarder_set = [
@@ -690,6 +799,8 @@ let () =
                    (Printexc.get_backtrace ())
                )
     );
+  Random.self_init ();
+
   Alcotest.run "dns-forward" [
     "Test infrastructure", test_infra_set;
     "Test forwarding", test_forwarder_set;

@@ -117,19 +117,13 @@ let getsockname server = server.address
 
 let connect ?read_buffer_size:_ address =
   if Hashtbl.mem bound address then begin
-    Hashtbl.replace nr_connects address (if Hashtbl.mem nr_connects address then Hashtbl.find nr_connects address else 1);
+    Hashtbl.replace nr_connects address (if Hashtbl.mem nr_connects address then Hashtbl.find nr_connects address + 1 else 1);
     let cb = (Hashtbl.find bound address).listen_cb in
     let open Error in
     cb ()
     >>= fun flow ->
     Lwt.return (Result.Ok flow)
   end else errorf "connect: no server bound to %s" (string_of_address address)
-
-let find_free_address () =
-  let rec loop port =
-    let address = Ipaddr.V4 Ipaddr.V4.localhost, port in
-    if Hashtbl.mem bound address then loop (port + 1) else address  in
-  loop 0
 
 let bind address =
   let listen_cb _ = Lwt.return (Result.Error (`Msg "no callback")) in

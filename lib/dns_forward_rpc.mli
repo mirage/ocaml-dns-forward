@@ -20,11 +20,20 @@
 module Client: sig
   module type S = Dns_forward_s.RPC_CLIENT
 
-  module Make
-      (Flow: Dns_forward_s.FLOW_CLIENT with type address = Ipaddr.t * int)
-      (Framing: Dns_forward_s.READERWRITER with type flow = Flow.flow)
-      (Time: Mirage_time_lwt.S):
-    S
+  module Persistent: sig
+    module Make
+        (Flow: Dns_forward_s.FLOW_CLIENT with type address = Ipaddr.t * int)
+        (Framing: Dns_forward_s.READERWRITER with type flow = Flow.flow)
+        (Time: Mirage_time_lwt.S):
+      S
+  end
+  module Nonpersistent: sig
+    module Make
+        (Flow: Dns_forward_s.FLOW_CLIENT with type address = Ipaddr.t * int)
+        (Framing: Dns_forward_s.READERWRITER with type flow = Flow.flow)
+        (Time: Mirage_time_lwt.S):
+      S
+  end
 end
 
 module Server: sig

@@ -64,7 +64,7 @@ type server = {
 }
 let bound = Hashtbl.create 7
 
-let connect ?(message_cb = (fun ?src:_ ?dst:_ ~buf:_ () -> Lwt.return_unit)) address =
+let connect ~gen_transaction_id:_ ?(message_cb = (fun ?src:_ ?dst:_ ~buf:_ () -> Lwt.return_unit)) address =
   (* Use a fixed client address for now *)
   let client_address = { Config.Address.ip = Ipaddr.of_string_exn "1.2.3.4"; port = 32768 } in
   if Hashtbl.mem bound address then begin
