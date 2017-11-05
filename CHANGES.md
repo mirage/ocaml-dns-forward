@@ -1,3 +1,8 @@
+### v0.10.0 (2017-11-05)
+
+- Increase entropy by randomising UDP source ports and transaction ids
+- Add missing build dependency on `ppx_sexp_conv`
+
 ### v0.9.0 (2017-07-24)
 
 - Port to MirageOS 3.0 (#70, @samoht)
